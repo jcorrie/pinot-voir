@@ -1,5 +1,6 @@
-//! This example uses the RP Pico W board Wifi chip (cyw43).
-//! Connects to specified Wifi network and creates a TCP endpoint on port 1234.
+//! Create a server using picoserver on a Raspberry Pi Pico W.
+//! Read the DHT22 sensor and expose the temperature and humidity readings via the server.
+
 
 #![no_std]
 #![no_main]

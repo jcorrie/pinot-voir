@@ -1,5 +1,4 @@
-//! This example uses the RP Pico W board Wifi chip (cyw43).
-//! Connects to Wifi network and makes a web request to get the current time.
+//! Periodically read a DHT22 sensor and send the data to a Supabase database using an HTTP POST request.
 
 #![no_std]
 #![no_main]
@@ -20,14 +19,14 @@ use embassy_rp::gpio::{Level, Output};
 use embassy_rp::peripherals::{DMA_CH0, PIO0};
 use embassy_rp::pio::{InterruptHandler, Pio};
 use embassy_time::{Delay, Duration, Timer};
-use rand::RngCore;
-use reqwless::client::{HttpClient, TlsConfig, TlsVerify};
-use reqwless::request::{Method, RequestBuilder};
-use static_cell::StaticCell;
 use pinot_voir::common::dht22_tools::sensor_reading_to_string;
 use pinot_voir::common::shared_functions::{
     blink_n_times, get_api_key_as_bearer_string, parse_env_variables, EnvironmentVariables,
 };
+use rand::RngCore;
+use reqwless::client::{HttpClient, TlsConfig, TlsVerify};
+use reqwless::request::{Method, RequestBuilder};
+use static_cell::StaticCell;
 
 use {defmt_rtt as _, panic_probe as _};
 

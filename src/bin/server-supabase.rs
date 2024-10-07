@@ -7,26 +7,22 @@
 #![allow(async_fn_in_trait)]
 #![feature(type_alias_impl_trait)]
 
-use core::str::from_utf8;
-
 use cyw43::Control;
 use cyw43_pio::PioSpi;
 use defmt::*;
 use embassy_dht::Reading;
 use embassy_executor::Spawner;
-use embassy_net::tcp::client::TcpClient;
-use embassy_net::{tcp, Config, Stack, StackResources};
+use embassy_net::{Config, Stack, StackResources};
 use embassy_rp::bind_interrupts;
 use embassy_rp::gpio::{Level, Output};
 use embassy_rp::peripherals::{DMA_CH0, PIO0};
 use embassy_rp::pio::{InterruptHandler, Pio};
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, mutex::Mutex};
 use embassy_time::{Delay, Duration, Timer};
-use embedded_hal_1::digital::OutputPin;
 use picoserve::extract::State;
-use pinot_voir::common::dht22_tools::{sensor_reading_to_string, DHT22};
+use pinot_voir::common::dht22_tools::DHT22;
 use pinot_voir::common::shared_functions::{
-    blink_n_times, get_api_key_as_bearer_string, parse_env_variables, EnvironmentVariables,
+    blink_n_times, parse_env_variables, EnvironmentVariables,
 };
 
 use picoserve::response::IntoResponse;
@@ -35,8 +31,6 @@ use picoserve::{
     routing::{get, parse_path_segment},
 };
 use rand::Rng;
-use reqwless::client::{HttpClient, TlsConfig, TlsVerify};
-use reqwless::request::{Method, RequestBuilder};
 use static_cell::make_static;
 use static_cell::StaticCell;
 

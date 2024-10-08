@@ -8,15 +8,9 @@
 #![feature(type_alias_impl_trait)]
 
 use cyw43::Control;
-use cyw43_pio::PioSpi;
 use defmt::*;
 use embassy_dht::Reading;
 use embassy_executor::Spawner;
-use embassy_net::{Config, Stack, StackResources};
-use embassy_rp::bind_interrupts;
-use embassy_rp::gpio::{Level, Output};
-use embassy_rp::peripherals::{DMA_CH0, PIN_25, PIO0};
-use embassy_rp::pio::{InterruptHandler, Pio};
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, mutex::Mutex};
 use embassy_time::{Delay, Duration, Timer};
 use picoserve::extract::State;
@@ -24,20 +18,16 @@ use pinot_voir::common::dht22_tools::DHT22;
 use pinot_voir::common::shared_functions::{
     blink_n_times, parse_env_variables, EnvironmentVariables,
 };
-use pinot_voir::common::wifi::{initiate_wifi_prelude, EmbassyPicoWifiCore, WEB_TASK_POOL_SIZE};
+use pinot_voir::common::wifi::{EmbassyPicoWifiCore, WEB_TASK_POOL_SIZE};
 
 use picoserve::response::IntoResponse;
 use picoserve::{
     response::DebugValue,
     routing::{get, parse_path_segment},
 };
-use rand::Rng;
 use static_cell::make_static;
-use static_cell::StaticCell;
 
 use {defmt_rtt as _, panic_probe as _};
-
-
 
 type AppRouter = impl picoserve::routing::PathRouter<AppState>;
 
@@ -98,52 +88,24 @@ async fn main(spawner: Spawner) {
     // Wifi prelude
     info!("Hello World!");
 
-    let mut wifi_core: EmbassyPicoWifiCore = initiate_wifi_prelude(
-        p.PIN_23,
-        p.PIN_24,
-        p.PIN_25,
-        p.PIN_29,
-        p.PIO0,
-        p.DMA_CH0,
-        spawner,
+    let mut embassy_pico_wifi_core = EmbassyPicoWifiCore::initiate_wifi_prelude(
+        p.PIN_23, p.PIN_24, p.PIN_25, p.PIN_29, p.PIO0, p.DMA_CH0, spawner,
     )
     .await;
 
-    loop {
-        match wifi_core
-            .control
-            .join_wpa2(
-                environment_variables.wifi_ssid,
-                environment_variables.wifi_password,
-            )
-            .await
-        {
-            Ok(_) => break,
-            Err(err) => {
-                info!("join failed with status={}", err.status);
-            }
-        }
+    let successful_join = embassy_pico_wifi_core
+        .join_wpa2_network(
+            &environment_variables.wifi_ssid,
+            &environment_variables.wifi_password,
+        )
+        .await;
+    match successful_join {
+        Ok(_) => info!("Successfully joined network"),
+        Err(_) => info!("Failed to join network"),
     }
-    blink_n_times(&mut wifi_core.control, 1).await;
-    // Wait for DHCP, not necessary when using static IP
-    info!("waiting for DHCP...");
-    while !wifi_core.stack.is_config_up() {
-        Timer::after_millis(100).await;
-    }
-    info!("DHCP is now up!");
-
-    info!("waiting for link up...");
-    while !wifi_core.stack.is_link_up() {
-        Timer::after_millis(500).await;
-    }
-    info!("Link is up!");
-
-    info!("waiting for stack to be up...");
-    wifi_core.stack.wait_config_up().await;
-    info!("Stack is up!");
 
     // And now we can use it!
-    blink_n_times(&mut wifi_core.control, 1).await;
+    blink_n_times(&mut embassy_pico_wifi_core.control, 1).await;
 
     fn make_app() -> picoserve::Router<AppRouter, AppState> {
         picoserve::Router::new()
@@ -185,7 +147,7 @@ async fn main(spawner: Spawner) {
     })
     .keep_connection_alive());
 
-    let shared_control = SharedControl(make_static!(Mutex::new(wifi_core.control)));
+    let shared_control: SharedControl = SharedControl(make_static!(Mutex::new(embassy_pico_wifi_core.control)));
     let shared_sensor = SharedSensor(make_static!(Mutex::new(DHT22::new(p.PIN_16, Delay))));
 
     // for some reason, idk why, I can only spawn one less than the pool size
@@ -193,7 +155,7 @@ async fn main(spawner: Spawner) {
     for id in 1..(WEB_TASK_POOL_SIZE - 1) {
         spawner.must_spawn(web_task(
             id,
-            wifi_core.stack,
+            embassy_pico_wifi_core.stack,
             app,
             config,
             AppState {

@@ -18,7 +18,7 @@ use embassy_rp::pio::{InterruptHandler, Pio};
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, mutex::Mutex};
 use embassy_time::{Delay, Duration, Timer};
 use picoserve::extract::State;
-use pinot_voir::common::dht22_tools::DHT22;
+use pinot_voir::common::dht22_tools::{DHT22, DHT22ReadingResponse};
 use pinot_voir::common::shared_functions::{
     blink_n_times, parse_env_variables, EnvironmentVariables,
 };
@@ -133,7 +133,7 @@ async fn main(spawner: Spawner) {
                 get(|State(SharedSensor(shared_sensor))| async move {
                     let mut sensor = shared_sensor.lock().await;
                     let dht_reading = sensor.read().unwrap();
-                    DHT22Reading {
+                    DHT22ReadingResponse {
                         temperature: dht_reading.get_temp(),
                         humidity: dht_reading.get_hum(),
                     }
@@ -173,25 +173,3 @@ async fn main(spawner: Spawner) {
     info!("Web server started");
 }
 
-struct DHT22Reading<T: core::fmt::Display> {
-    pub temperature: T,
-    pub humidity: T,
-}
-
-impl<T: core::fmt::Display> IntoResponse for DHT22Reading<T> {
-    async fn write_to<
-        R: picoserve::io::Read,
-        W: picoserve::response::ResponseWriter<Error = R::Error>,
-    >(
-        self,
-        connection: picoserve::response::Connection<'_, R>,
-        response_writer: W,
-    ) -> Result<picoserve::ResponseSent, W::Error> {
-        format_args!(
-            "{{\"temperature\":{},\"humidity\":{}}}",
-            self.temperature, self.humidity
-        )
-        .write_to(connection, response_writer)
-        .await
-    }
-}

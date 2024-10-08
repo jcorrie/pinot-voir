@@ -14,13 +14,12 @@ use embassy_executor::Spawner;
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, mutex::Mutex};
 use embassy_time::{Delay, Duration, Timer};
 use picoserve::extract::State;
-use pinot_voir::common::dht22_tools::DHT22;
+use pinot_voir::common::dht22_tools::{DHT22ReadingResponse, DHT22};
 use pinot_voir::common::shared_functions::{
     blink_n_times, parse_env_variables, EnvironmentVariables,
 };
 use pinot_voir::common::wifi::{EmbassyPicoWifiCore, WEB_TASK_POOL_SIZE};
 
-use picoserve::response::IntoResponse;
 use picoserve::{
     response::DebugValue,
     routing::{get, parse_path_segment},
@@ -126,7 +125,7 @@ async fn main(spawner: Spawner) {
                     let mut sensor = shared_sensor.lock().await;
                     let dht_reading = sensor.read();
                     match dht_reading {
-                        Ok(dht_reading) => Ok(DHT22Reading {
+                        Ok(dht_reading) => Ok(DHT22ReadingResponse {
                             temperature: dht_reading.get_temp(),
                             humidity: dht_reading.get_hum(),
                         }),
@@ -147,7 +146,8 @@ async fn main(spawner: Spawner) {
     })
     .keep_connection_alive());
 
-    let shared_control: SharedControl = SharedControl(make_static!(Mutex::new(embassy_pico_wifi_core.control)));
+    let shared_control: SharedControl =
+        SharedControl(make_static!(Mutex::new(embassy_pico_wifi_core.control)));
     let shared_sensor = SharedSensor(make_static!(Mutex::new(DHT22::new(p.PIN_16, Delay))));
 
     // for some reason, idk why, I can only spawn one less than the pool size
@@ -167,34 +167,11 @@ async fn main(spawner: Spawner) {
 
     info!("Web server started");
 
-    unwrap!(spawner.spawn(toggle_led(Duration::from_secs(1), shared_sensor)));
-}
-
-struct DHT22Reading<T: core::fmt::Display> {
-    pub temperature: T,
-    pub humidity: T,
-}
-
-impl<T: core::fmt::Display> IntoResponse for DHT22Reading<T> {
-    async fn write_to<
-        R: picoserve::io::Read,
-        W: picoserve::response::ResponseWriter<Error = R::Error>,
-    >(
-        self,
-        connection: picoserve::response::Connection<'_, R>,
-        response_writer: W,
-    ) -> Result<picoserve::ResponseSent, W::Error> {
-        format_args!(
-            "{{\"temperature\":{},\"humidity\":{}}}",
-            self.temperature, self.humidity
-        )
-        .write_to(connection, response_writer)
-        .await
-    }
+    unwrap!(spawner.spawn(read_sensor(Duration::from_secs(1), shared_sensor)));
 }
 
 #[embassy_executor::task(pool_size = 2)]
-async fn toggle_led(delay: Duration, sensor: SharedSensor<Delay>) {
+async fn read_sensor(delay: Duration, sensor: SharedSensor<Delay>) {
     let delay_loop = Duration::from_secs(7);
     let blank_reading = Reading {
         temp: 0.0,

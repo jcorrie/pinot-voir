@@ -1,14 +1,20 @@
 use cyw43::Control;
 use cyw43_pio::PioSpi;
-use defmt::{info, unwrap};
+use defmt::info;
 use embassy_executor::Spawner;
+use embassy_net::dns::DnsSocket;
+use embassy_net::tcp::client::{TcpClient, TcpClientState};
 use embassy_net::{Config, Stack, StackResources};
 use embassy_rp::bind_interrupts;
+use embassy_rp::clocks::RoscRng;
 use embassy_rp::gpio::{Level, Output};
 use embassy_rp::peripherals::{DMA_CH0, PIN_23, PIN_24, PIN_25, PIN_29, PIO0};
 use embassy_rp::pio::{InterruptHandler, Pio};
 use embassy_time::Timer;
-use rand::Rng;
+use embedded_nal_async::{Dns, TcpConnect};
+
+use rand::{Rng, RngCore};
+use reqwless::client::{HttpClient, TlsConfig, TlsVerify};
 use static_cell::StaticCell;
 
 pub const WEB_TASK_POOL_SIZE: usize = 8;
@@ -32,6 +38,7 @@ async fn net_task(stack: &'static Stack<cyw43::NetDriver<'static>>) -> ! {
 pub struct EmbassyPicoWifiCore {
     pub control: Control<'static>,
     pub stack: &'static Stack<cyw43::NetDriver<'static>>,
+    pub tls_config: Option<TlsConfig<'static>>,
 }
 
 impl EmbassyPicoWifiCore {
@@ -39,7 +46,11 @@ impl EmbassyPicoWifiCore {
         control: Control<'static>,
         stack: &'static Stack<cyw43::NetDriver<'static>>,
     ) -> Self {
-        Self { control, stack }
+        Self {
+            control,
+            stack,
+            tls_config: None,
+        }
     }
 
     pub async fn initiate_wifi_prelude(

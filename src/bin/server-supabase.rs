@@ -94,8 +94,8 @@ async fn main(spawner: Spawner) {
 
     let successful_join = embassy_pico_wifi_core
         .join_wpa2_network(
-            &environment_variables.wifi_ssid,
-            &environment_variables.wifi_password,
+            environment_variables.wifi_ssid,
+            environment_variables.wifi_password,
         )
         .await;
     match successful_join {

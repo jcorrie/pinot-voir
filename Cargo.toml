@@ -58,6 +58,7 @@ rand = { version = "0.8.5", default-features = false }
 
 picoserve = { version = "0.12.2", features = ["embassy"] }
 embassy-dht = "0.1.5"
+embedded-nal-async = "0.8.0"
 
 [profile.release]
 debug = 2

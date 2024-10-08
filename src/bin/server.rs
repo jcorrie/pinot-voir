@@ -7,16 +7,10 @@
 #![feature(type_alias_impl_trait)]
 
 use cyw43::Control;
-use cyw43_pio::PioSpi;
 use defmt::*;
 use embassy_executor::Spawner;
-use embassy_net::{Config, Stack, StackResources};
-use embassy_rp::bind_interrupts;
-use embassy_rp::gpio::{Level, Output};
-use embassy_rp::peripherals::{DMA_CH0, PIO0};
-use embassy_rp::pio::{InterruptHandler, Pio};
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, mutex::Mutex};
-use embassy_time::{Delay, Duration, Timer};
+use embassy_time::{Delay, Duration};
 use picoserve::extract::State;
 use pinot_voir::common::dht22_tools::{DHT22, DHT22ReadingResponse};
 use pinot_voir::common::shared_functions::{
@@ -24,14 +18,11 @@ use pinot_voir::common::shared_functions::{
 };
 use pinot_voir::common::wifi::{EmbassyPicoWifiCore, WEB_TASK_POOL_SIZE};
 
-use picoserve::response::IntoResponse;
 use picoserve::{
     response::DebugValue,
     routing::{get, parse_path_segment},
 };
-use rand::Rng;
 use static_cell::make_static;
-use static_cell::StaticCell;
 
 use {defmt_rtt as _, panic_probe as _};
 
@@ -103,8 +94,8 @@ async fn main(spawner: Spawner) {
 
     let successful_join = embassy_pico_wifi_core
         .join_wpa2_network(
-            &environment_variables.wifi_ssid,
-            &environment_variables.wifi_password,
+            environment_variables.wifi_ssid,
+            environment_variables.wifi_password,
         )
         .await;
     match successful_join {

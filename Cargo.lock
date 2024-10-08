@@ -628,7 +628,7 @@ dependencies = [
  "embassy-sync 0.5.0",
  "embassy-time",
  "embedded-io-async",
- "embedded-nal-async",
+ "embedded-nal-async 0.7.1",
  "futures",
  "generic-array 0.14.7",
  "heapless 0.8.0",
@@ -852,14 +852,33 @@ dependencies = [
 ]
 
 [[package]]
+name = "embedded-nal"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c56a28be191a992f28f178ec338a0bf02f63d7803244add736d026a471e6ed77"
+dependencies = [
+ "nb 1.1.0",
+]
+
+[[package]]
 name = "embedded-nal-async"
 version = "0.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "72229137a4fc12d239b0b7f50f04b30790678da6d782a0f3f1909bf57ec4b759"
 dependencies = [
  "embedded-io-async",
- "embedded-nal",
+ "embedded-nal 0.8.0",
  "no-std-net",
+]
+
+[[package]]
+name = "embedded-nal-async"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "76959917cd2b86f40a98c28dd5624eddd1fa69d746241c8257eac428d83cb211"
+dependencies = [
+ "embedded-io-async",
+ "embedded-nal 0.9.0",
 ]
 
 [[package]]
@@ -1541,6 +1560,7 @@ dependencies = [
  "embassy-time",
  "embedded-graphics",
  "embedded-hal 1.0.0",
+ "embedded-nal-async 0.8.0",
  "heapless 0.8.0",
  "panic-probe",
  "picoserve",
@@ -1769,7 +1789,7 @@ dependencies = [
  "defmt",
  "embedded-io",
  "embedded-io-async",
- "embedded-nal-async",
+ "embedded-nal-async 0.7.1",
  "embedded-tls",
  "heapless 0.8.0",
  "hex",

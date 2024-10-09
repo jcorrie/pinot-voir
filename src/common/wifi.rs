@@ -140,3 +140,9 @@ impl EmbassyPicoWifiCore {
         Ok(())
     }
 }
+
+pub struct HttpBuffers {
+    pub rx_buffer: [u8; 8192],
+    pub tls_read_buffer: [u8; 16640],
+    pub tls_write_buffer: [u8; 16640],
+}

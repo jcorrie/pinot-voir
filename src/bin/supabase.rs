@@ -4,6 +4,7 @@
 #![no_main]
 #![allow(async_fn_in_trait)]
 
+use core::fmt::{Error, Write};
 use core::str::from_utf8;
 
 use cyw43_pio::PioSpi;
@@ -19,11 +20,12 @@ use embassy_rp::gpio::{Level, Output};
 use embassy_rp::peripherals::{DMA_CH0, PIO0};
 use embassy_rp::pio::{InterruptHandler, Pio};
 use embassy_time::{Delay, Duration, Timer};
+use heapless::String;
 use pinot_voir::common::dht22_tools::sensor_reading_to_string;
 use pinot_voir::common::shared_functions::{
-    blink_n_times, get_api_key_as_bearer_string, parse_env_variables, EnvironmentVariables,
+    blink_n_times, parse_env_variables, EnvironmentVariables,
 };
-use pinot_voir::common::wifi::EmbassyPicoWifiCore;
+use pinot_voir::common::wifi::{EmbassyPicoWifiCore, HttpBuffers};
 use rand::RngCore;
 use reqwless::client::{HttpClient, TlsConfig, TlsVerify};
 use reqwless::request::{Method, RequestBuilder};
@@ -61,42 +63,29 @@ async fn main(spawner: Spawner) {
     let delay_loop = Duration::from_secs(1800);
 
     // And now we can use it!
+    blink_n_times(&mut embassy_pico_wifi_core.control, 1).await;
+    let mut http_buffers = HttpBuffers {
+        rx_buffer: [0; 8192],
+        tls_read_buffer: [0; 16640],
+        tls_write_buffer: [0; 16640],
+    };
+    let tls_config = TlsConfig::new(
+        seed,
+        &mut http_buffers.tls_read_buffer,
+        &mut http_buffers.tls_write_buffer,
+        TlsVerify::None,
+    );
+
+    let client_state = TcpClientState::<1, 1024, 1024>::new();
+    let tcp_client = TcpClient::new(embassy_pico_wifi_core.stack, &client_state);
+    let dns_client = DnsSocket::new(embassy_pico_wifi_core.stack);
+
+    let mut http_client = HttpClient::new_with_tls(&tcp_client, &dns_client, tls_config);
     loop {
-        blink_n_times(&mut embassy_pico_wifi_core.control, 1).await;
-        let mut rx_buffer = [0; 8192];
-        let mut tls_read_buffer = [0; 16640];
-        let mut tls_write_buffer = [0; 16640];
-
-        let client_state = TcpClientState::<1, 1024, 1024>::new();
-        let tcp_client = TcpClient::new(embassy_pico_wifi_core.stack, &client_state);
-        let dns_client = DnsSocket::new(embassy_pico_wifi_core.stack);
-        let tls_config = TlsConfig::new(
-            seed,
-            &mut tls_read_buffer,
-            &mut tls_write_buffer,
-            TlsVerify::None,
-        );
-
-        let mut http_client = HttpClient::new_with_tls(&tcp_client, &dns_client, tls_config);
         let dht_reading = dht_pin.read().unwrap();
-
-        let dht_reading_as_string: heapless::String<32> =
-            match sensor_reading_to_string(dht_reading) {
-                Ok(s) => s,
-                Err(_e) => {
-                    error!("Failed to convert sensor reading to string");
-                    return; // handle the error
-                }
-            };
-        info!("DHT reading as string: {:?}", &dht_reading_as_string);
-        let bearer_token = get_api_key_as_bearer_string(environment_variables.supabase_key)
-            .expect("Failed to get API key as bearer string");
-        let headers = [
-            ("Content-Type", "application/x-www-form-urlencoded"),
-            ("apikey", environment_variables.supabase_key),
-            ("Authorization", bearer_token.as_str()),
-        ];
-
+        let (dht_reading_as_string, headers) =
+            construct_post_request_arguments(dht_reading, &environment_variables)
+                .expect("Failed to read dht reading");
         let mut request = match http_client
             .request(Method::POST, environment_variables.supabase_url)
             .await
@@ -109,7 +98,7 @@ async fn main(spawner: Spawner) {
         }
         .headers(&headers)
         .body(dht_reading_as_string.as_bytes());
-        let response = match request.send(&mut rx_buffer).await {
+        let response = match request.send(&mut http_buffers.rx_buffer).await {
             Ok(resp) => resp,
             Err(_e) => {
                 error!("Failed to send HTTP request");
@@ -127,4 +116,25 @@ async fn main(spawner: Spawner) {
         info!("Response body: {:?}", &body);
         Timer::after(delay_loop).await;
     }
+}
+
+fn construct_post_request_arguments(
+    dht_reading: embassy_dht::Reading<f32, f32>,
+    environment_variables: &EnvironmentVariables,
+) -> Result<(heapless::String<32>, [(&str, &str); 3]), core::fmt::Error> {
+    let dht_reading_as_string: heapless::String<32> = match sensor_reading_to_string(dht_reading) {
+        Ok(s) => s,
+        Err(_e) => {
+            error!("Failed to convert sensor reading to string");
+            return Err(_e);
+        }
+    };
+    info!("DHT reading as string: {:?}", &dht_reading_as_string);
+
+    let headers: [(&str, &str); 3] = [
+        ("Content-Type", "application/x-www-form-urlencoded"),
+        ("apikey", environment_variables.supabase_key),
+        ("Authorization", environment_variables.supabase_key),
+    ];
+    Ok((dht_reading_as_string, headers))
 }

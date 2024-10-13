@@ -46,4 +46,4 @@ Create a .env file from .env.example, with details of the wifi network the pico 
 * There is no default memory allocator for the pico environment. Accordingly, you do not have access to types like String (which are allocated on the heap at runtime). The heapless library can provide some workarounds here.
 * Normally trivial tasks such as formatting strings become complicated in an embedded environment.
 * A work in progress is breaking down the code into more reusable functions. The borrow checker has been interfering (eg, passing peripherals into functions is causing issues).
-* Resource constraints are real. Running both a server and making periodic `GET` requests seems to have pushed the devices memory to its limits.
+* Resource constraints are real. Running both a server and making periodic `GET` requests seems to have pushed the device's memory to its limits.

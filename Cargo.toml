@@ -93,6 +93,13 @@ test = false
 doctest = false
 bench = false
 
+[[bin]]
+name = "server-supabase"
+path = "src/bin/server-supabase.rs"
+test = false
+doctest = false
+bench = false
+
 
 [[bin]]
 name = "read_dht22"

@@ -11,6 +11,10 @@ use cyw43::Control;
 use defmt::*;
 use embassy_dht::Reading;
 use embassy_executor::Spawner;
+use embassy_net::dns::DnsSocket;
+use embassy_net::tcp::client::TcpConnection;
+use embassy_net::tcp::client::{TcpClient, TcpClientState};
+use embassy_rp::clocks::RoscRng;
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, mutex::Mutex};
 use embassy_time::{Delay, Duration, Timer};
 use picoserve::extract::State;
@@ -18,12 +22,17 @@ use pinot_voir::common::dht22_tools::{DHT22ReadingResponse, DHT22};
 use pinot_voir::common::shared_functions::{
     blink_n_times, parse_env_variables, EnvironmentVariables,
 };
-use pinot_voir::common::wifi::{EmbassyPicoWifiCore, WEB_TASK_POOL_SIZE};
+use pinot_voir::common::supabase::{construct_post_request_arguments, read_http_response};
+use pinot_voir::common::wifi::{EmbassyPicoWifiCore, HttpBuffers, WEB_TASK_POOL_SIZE};
+use rand::RngCore;
 
 use picoserve::{
     response::DebugValue,
     routing::{get, parse_path_segment},
 };
+use reqwless::client::{HttpClient, HttpConnection, TlsConfig, TlsVerify};
+use reqwless::request::{Method, RequestBuilder};
+use reqwless::response::Response;
 use static_cell::make_static;
 
 use {defmt_rtt as _, panic_probe as _};
@@ -82,7 +91,7 @@ impl picoserve::extract::FromRef<AppState> for SharedSensor<Delay> {
 
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
-    let environment_variables: EnvironmentVariables = parse_env_variables();
+    let environment_variables: &'static EnvironmentVariables = make_static!(parse_env_variables());
     let p = embassy_rp::init(Default::default());
     // Wifi prelude
     info!("Hello World!");
@@ -152,7 +161,7 @@ async fn main(spawner: Spawner) {
 
     // for some reason, idk why, I can only spawn one less than the pool size
     // otherwise it panics
-    for id in 1..(WEB_TASK_POOL_SIZE - 1) {
+    for id in 1..(WEB_TASK_POOL_SIZE - 3) {
         spawner.must_spawn(web_task(
             id,
             embassy_pico_wifi_core.stack,
@@ -167,11 +176,37 @@ async fn main(spawner: Spawner) {
 
     info!("Web server started");
 
-    unwrap!(spawner.spawn(read_sensor(Duration::from_secs(1), shared_sensor)));
+    unwrap!(spawner.spawn(read_sensor(
+        shared_sensor,
+        environment_variables,
+        embassy_pico_wifi_core.stack,
+    )));
 }
 
-#[embassy_executor::task(pool_size = 2)]
-async fn read_sensor(delay: Duration, sensor: SharedSensor<Delay>) {
+#[embassy_executor::task(pool_size = 1)]
+async fn read_sensor(
+    sensor: SharedSensor<Delay>,
+    environment_variables: &'static EnvironmentVariables,
+    stack: &'static embassy_net::Stack<cyw43::NetDriver<'static>>,
+) {
+    info!("A");
+    let mut rng = RoscRng;
+    let seed = rng.next_u64();
+    let mut http_buffers: HttpBuffers = HttpBuffers::new();
+    info!("B");
+    let client_state: TcpClientState<1, 1024, 1024> = TcpClientState::<1, 1024, 1024>::new();
+
+    let tls_config: TlsConfig<'_> = TlsConfig::new(
+        seed,
+        &mut http_buffers.tls_read_buffer,
+        &mut http_buffers.tls_write_buffer,
+        TlsVerify::None,
+    );
+    info!("C");
+    let tcp_client = TcpClient::new(stack, &client_state);
+    let dns_client = DnsSocket::new(stack);
+    let mut http_client = HttpClient::new_with_tls(&tcp_client, &dns_client, tls_config);
+    info!("D");
     let delay_loop = Duration::from_secs(7);
     let blank_reading = Reading {
         temp: 0.0,
@@ -184,6 +219,31 @@ async fn read_sensor(delay: Duration, sensor: SharedSensor<Delay>) {
             dht_reading.get_temp(),
             dht_reading.get_hum()
         );
+        let (dht_reading_as_string, headers) =
+            construct_post_request_arguments(dht_reading, &environment_variables)
+                .expect("Failed to read dht reading");
+        let mut request = match http_client
+            .request(Method::POST, environment_variables.supabase_url)
+            .await
+        {
+            Ok(req) => req,
+            Err(e) => {
+                error!("Failed to make HTTP request: {:?}", e);
+                return; // handle the error
+            }
+        }
+        .headers(&headers)
+        .body(dht_reading_as_string.as_bytes());
+        // let response: Response<'_, '_, HttpConnection<'_, TcpConnection<'_, 1, 1024, 1024>>> =
+        //     match request.send(&mut http_buffers.rx_buffer).await {
+        //         Ok(resp) => resp,
+        //         Err(_e) => {
+        //             error!("Failed to send HTTP request");
+        //             return; // handle the error;
+        //         }
+        //     };
+
+        // read_http_response(response).await;
         Timer::after(delay_loop).await;
     }
 }

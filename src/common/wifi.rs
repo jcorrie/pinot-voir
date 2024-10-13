@@ -143,16 +143,16 @@ impl EmbassyPicoWifiCore {
 
 pub struct HttpBuffers {
     pub rx_buffer: [u8; 8192],
-    pub tls_read_buffer: [u8; 16640],
-    pub tls_write_buffer: [u8; 16640],
+    pub tls_read_buffer: [u8; 8192],
+    pub tls_write_buffer: [u8; 8192],
 }
 
 impl HttpBuffers {
     pub fn new() -> Self {
         Self {
             rx_buffer: [0; 8192],
-            tls_read_buffer: [0; 16640],
-            tls_write_buffer: [0; 16640],
+            tls_read_buffer: [0; 8192],
+            tls_write_buffer: [0; 8192],
         }
     }
 }

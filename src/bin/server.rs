@@ -12,7 +12,7 @@ use embassy_executor::Spawner;
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, mutex::Mutex};
 use embassy_time::{Delay, Duration};
 use picoserve::extract::State;
-use pinot_voir::common::dht22_tools::{DHT22, DHT22ReadingResponse};
+use pinot_voir::common::dht22_tools::{DHT22ReadingResponse, DHT22};
 use pinot_voir::common::shared_functions::{
     blink_n_times, parse_env_variables, EnvironmentVariables,
 };
@@ -26,9 +26,7 @@ use static_cell::make_static;
 
 use {defmt_rtt as _, panic_probe as _};
 
-
 type AppRouter = impl picoserve::routing::PathRouter<AppState>;
-
 
 #[embassy_executor::task(pool_size = WEB_TASK_POOL_SIZE)]
 async fn web_task(
@@ -163,4 +161,3 @@ async fn main(spawner: Spawner) {
 
     info!("Web server started");
 }
-

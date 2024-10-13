@@ -207,7 +207,8 @@ async fn read_sensor(
     let dns_client = DnsSocket::new(stack);
     let mut http_client = HttpClient::new_with_tls(&tcp_client, &dns_client, tls_config);
     info!("D");
-    let delay_loop = Duration::from_secs(7);
+
+    let delay_loop = Duration::from_secs(60 * 30);
     let blank_reading = Reading {
         temp: 0.0,
         hum: 0.0,
@@ -234,16 +235,16 @@ async fn read_sensor(
         }
         .headers(&headers)
         .body(dht_reading_as_string.as_bytes());
-        // let response: Response<'_, '_, HttpConnection<'_, TcpConnection<'_, 1, 1024, 1024>>> =
-        //     match request.send(&mut http_buffers.rx_buffer).await {
-        //         Ok(resp) => resp,
-        //         Err(_e) => {
-        //             error!("Failed to send HTTP request");
-        //             return; // handle the error;
-        //         }
-        //     };
+        let response: Response<'_, '_, HttpConnection<'_, TcpConnection<'_, 1, 1024, 1024>>> =
+            match request.send(&mut http_buffers.rx_buffer).await {
+                Ok(resp) => resp,
+                Err(_e) => {
+                    error!("Failed to send HTTP request");
+                    return; // handle the error;
+                }
+            };
 
-        // read_http_response(response).await;
+        read_http_response(response).await;
         Timer::after(delay_loop).await;
     }
 }

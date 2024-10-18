@@ -5,3 +5,5 @@ pub mod dht22_tools;
 pub mod wifi;
 
 pub mod supabase;
+
+pub mod dht22_server;

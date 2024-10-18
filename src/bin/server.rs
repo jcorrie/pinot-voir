@@ -12,6 +12,9 @@ use embassy_executor::Spawner;
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, mutex::Mutex};
 use embassy_time::{Delay, Duration};
 use picoserve::extract::State;
+use pinot_voir::common::dht22_server::{
+    make_app, AppRouter, AppState, SharedControl, SharedSensor,
+};
 use pinot_voir::common::dht22_tools::{DHT22ReadingResponse, DHT22};
 use pinot_voir::common::shared_functions::{
     blink_n_times, parse_env_variables, EnvironmentVariables,
@@ -25,8 +28,6 @@ use picoserve::{
 use static_cell::StaticCell;
 
 use {defmt_rtt as _, panic_probe as _};
-
-type AppRouter = impl picoserve::routing::PathRouter<AppState>;
 
 #[embassy_executor::task(pool_size = WEB_TASK_POOL_SIZE)]
 async fn web_task(
@@ -55,29 +56,6 @@ async fn web_task(
     .await
 }
 
-#[derive(Clone, Copy)]
-struct SharedControl(&'static Mutex<CriticalSectionRawMutex, Control<'static>>);
-
-#[derive(Clone, Copy)]
-struct SharedSensor<D: 'static>(&'static Mutex<CriticalSectionRawMutex, DHT22<'static, D>>);
-
-struct AppState {
-    shared_control: SharedControl,
-    shared_sensor: SharedSensor<Delay>,
-}
-
-impl picoserve::extract::FromRef<AppState> for SharedControl {
-    fn from_ref(state: &AppState) -> Self {
-        state.shared_control
-    }
-}
-
-impl picoserve::extract::FromRef<AppState> for SharedSensor<Delay> {
-    fn from_ref(state: &AppState) -> Self {
-        state.shared_sensor.clone()
-    }
-}
-
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
     static ENVIRONMENT_VARIABLES: StaticCell<EnvironmentVariables> = StaticCell::new();
@@ -104,33 +82,6 @@ async fn main(spawner: Spawner) {
     }
     // And now we can use it!
     blink_n_times(&mut embassy_pico_wifi_core.control, 1).await;
-
-    blink_n_times(&mut embassy_pico_wifi_core.control, 2).await;
-    fn make_app() -> picoserve::Router<AppRouter, AppState> {
-        picoserve::Router::new()
-            .route("/", get(|| async move { "Hello world." }))
-            .route(
-                ("/set_led", parse_path_segment()),
-                get(
-                    |led_is_on, State(SharedControl(control)): State<SharedControl>| async move {
-                        control.lock().await.gpio_set(0, led_is_on).await;
-
-                        DebugValue(led_is_on)
-                    },
-                ),
-            )
-            .route(
-                "/read_sensor",
-                get(|State(SharedSensor(shared_sensor))| async move {
-                    let mut sensor = shared_sensor.lock().await;
-                    let dht_reading = sensor.read().unwrap();
-                    DHT22ReadingResponse {
-                        temperature: dht_reading.get_temp(),
-                        humidity: dht_reading.get_hum(),
-                    }
-                }),
-            )
-    }
 
     static STATIC_APP: StaticCell<picoserve::Router<AppRouter, AppState>> = StaticCell::new();
     let app = STATIC_APP.init(make_app());

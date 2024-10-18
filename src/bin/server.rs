@@ -22,7 +22,7 @@ use picoserve::{
     response::DebugValue,
     routing::{get, parse_path_segment},
 };
-use static_cell::make_static;
+use static_cell::{make_static, StaticCell};
 
 use {defmt_rtt as _, panic_probe as _};
 
@@ -80,7 +80,9 @@ impl picoserve::extract::FromRef<AppState> for SharedSensor<Delay> {
 
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
-    let environment_variables: EnvironmentVariables = parse_env_variables();
+    static ENVIRONMENT_VARIABLES: StaticCell<EnvironmentVariables> = StaticCell::new();
+    let environment_variables: &'static EnvironmentVariables =
+        ENVIRONMENT_VARIABLES.init(parse_env_variables());
     let p = embassy_rp::init(Default::default());
     // Wifi prelude
     info!("Hello World!");

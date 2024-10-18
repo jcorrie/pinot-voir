@@ -33,7 +33,7 @@ use picoserve::{
 use reqwless::client::{HttpClient, HttpConnection, TlsConfig, TlsVerify};
 use reqwless::request::{Method, RequestBuilder};
 use reqwless::response::Response;
-use static_cell::make_static;
+use static_cell::StaticCell;
 
 use {defmt_rtt as _, panic_probe as _};
 
@@ -91,7 +91,10 @@ impl picoserve::extract::FromRef<AppState> for SharedSensor<Delay> {
 
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
-    let environment_variables: &'static EnvironmentVariables = make_static!(parse_env_variables());
+    static ENVIRONMENT_VARIABLES: StaticCell<EnvironmentVariables> = StaticCell::new();
+    let environment_variables: &'static EnvironmentVariables =
+        ENVIRONMENT_VARIABLES.init(parse_env_variables());
+
     let p = embassy_rp::init(Default::default());
     // Wifi prelude
     info!("Hello World!");
@@ -144,20 +147,31 @@ async fn main(spawner: Spawner) {
             )
     }
 
-    let app = make_static!(make_app());
+    static STATIC_APP: StaticCell<picoserve::Router<AppRouter, AppState>> = StaticCell::new();
+
+    let app = STATIC_APP.init(make_app());
 
     info!("Starting web server");
 
-    let config = make_static!(picoserve::Config::new(picoserve::Timeouts {
-        start_read_request: Some(Duration::from_secs(5)),
-        read_request: Some(Duration::from_secs(1)),
-        write: Some(Duration::from_secs(1)),
-    })
-    .keep_connection_alive());
+    static STATIC_CONFIG: StaticCell<picoserve::Config<Duration>> = StaticCell::new();
+    let config = STATIC_CONFIG.init(
+        picoserve::Config::new(picoserve::Timeouts {
+            start_read_request: Some(Duration::from_secs(5)),
+            read_request: Some(Duration::from_secs(1)),
+            write: Some(Duration::from_secs(1)),
+        })
+        .keep_connection_alive(),
+    );
+
+    static STATIC_CONTROL: StaticCell<Mutex<CriticalSectionRawMutex, Control>> = StaticCell::new();
 
     let shared_control: SharedControl =
-        SharedControl(make_static!(Mutex::new(embassy_pico_wifi_core.control)));
-    let shared_sensor = SharedSensor(make_static!(Mutex::new(DHT22::new(p.PIN_16, Delay))));
+        SharedControl(STATIC_CONTROL.init(Mutex::new(embassy_pico_wifi_core.control)));
+
+    static STATIC_DHT22: StaticCell<Mutex<CriticalSectionRawMutex, DHT22<Delay>>> =
+        StaticCell::new();
+    let shared_sensor: SharedSensor<Delay> =
+        SharedSensor(STATIC_DHT22.init(Mutex::new(DHT22::new(p.PIN_16, Delay))));
 
     // for some reason, idk why, I can only spawn one less than the pool size
     // otherwise it panics

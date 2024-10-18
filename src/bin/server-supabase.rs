@@ -148,7 +148,6 @@ async fn main(spawner: Spawner) {
     }
 
     static STATIC_APP: StaticCell<picoserve::Router<AppRouter, AppState>> = StaticCell::new();
-
     let app = STATIC_APP.init(make_app());
 
     info!("Starting web server");

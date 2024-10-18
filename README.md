@@ -26,6 +26,26 @@ In [config.toml](.cargo/config.toml) toggle (comment in/out) the relevant runner
 
 To flash, just run `cargo run --bin [binary-name]` (no `--release` flag). You don't need to disconnect/connect each time you want to reflash.
 
+### Radio module cyw43
+
+The wifi capability on the Pico W comes from a cyw43. Firmware binaries are included in [cyw43-firmware](/cyw43-firmware). 
+
+Each time you flash a binary that uses the wifi chip, this firmware needs to be included. (The code in this repo does this.)
+
+Alternatively, when using the debug probe, it's possible to flash the cyw43 firmwares once up front and then just refer to the  hardcoded addresses.
+
+Run:
+```sh
+probe-rs download cyw43-firmware/43439A0.bin --binary-format bin --chip RP2040 --base-address 0x10100000
+probe-rs download cyw43-firmware/43439A0_clm.bin --binary-format bin --chip RP2040 --base-address 0x10140000
+```
+
+And in the code, replace the `include_bytes!` macros with:
+```rust
+let fw = unsafe { core::slice::from_raw_parts(0x10100000 as *const u8, 230321) };
+let clm = unsafe { core::slice::from_raw_parts(0x10140000 as *const u8, 4752) };
+```
+
 ### DHT22 wiring
 
 Courtesy of [adafruit](https://learn.adafruit.com/dht-humidity-sensing-on-raspberry-pi-with-gdocs-logging/wiring), here is an image of how the DHT22 would be wired up. These pins don't correspond exactly to the pico, so just make sure that the pico's ground pin is connected to the ground rail on your breadboard and the 3V pin is connected to the positive rail on your breadboard. Additionally, this repo assumes that the data line out of the DHT22 sensor (blue in the diagram below) is connected to GPIO PIN 16.

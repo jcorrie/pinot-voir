@@ -2,19 +2,19 @@ use core::str::from_utf8;
 
 use super::dht22_tools::sensor_reading_to_string;
 use super::shared_functions::EnvironmentVariables;
-use defmt::{error, info, unwrap};
+use defmt::{error, info};
 use embassy_net::tcp::client::TcpConnection;
-use embassy_rp::bind_interrupts;
-use embassy_rp::clocks::RoscRng;
-use reqwless::client::{HttpClient, HttpConnection, TlsConfig, TlsVerify};
+use reqwless::client::HttpConnection;
 use reqwless::response::Response;
 
 use {defmt_rtt as _, panic_probe as _};
 
+type SupabaseHeaders = [(&'static str, &'static str); 3];
+
 pub fn construct_post_request_arguments(
     dht_reading: embassy_dht::Reading<f32, f32>,
     environment_variables: &EnvironmentVariables,
-) -> Result<(heapless::String<32>, [(&str, &str); 3]), core::fmt::Error> {
+) -> Result<(heapless::String<32>, SupabaseHeaders), core::fmt::Error> {
     let dht_reading_as_string: heapless::String<32> = match sensor_reading_to_string(dht_reading) {
         Ok(s) => s,
         Err(_e) => {
@@ -24,7 +24,7 @@ pub fn construct_post_request_arguments(
     };
     info!("DHT reading as string: {:?}", &dht_reading_as_string);
 
-    let headers: [(&str, &str); 3] = [
+    let headers: SupabaseHeaders = [
         ("Content-Type", "application/x-www-form-urlencoded"),
         ("apikey", environment_variables.supabase_key),
         ("Authorization", environment_variables.supabase_key),

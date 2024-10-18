@@ -2,19 +2,15 @@ use cyw43::Control;
 use cyw43_pio::PioSpi;
 use defmt::info;
 use embassy_executor::Spawner;
-use embassy_net::dns::DnsSocket;
-use embassy_net::driver::Driver;
-use embassy_net::tcp::client::{TcpClient, TcpClientState};
 use embassy_net::{Config, Stack, StackResources};
 use embassy_rp::bind_interrupts;
-use embassy_rp::clocks::RoscRng;
 use embassy_rp::gpio::{Level, Output};
 use embassy_rp::peripherals::{DMA_CH0, PIN_23, PIN_24, PIN_25, PIN_29, PIO0};
 use embassy_rp::pio::{InterruptHandler, Pio};
 use embassy_time::Timer;
 
-use rand::{Rng, RngCore};
-use reqwless::client::{HttpClient, TlsConfig, TlsVerify};
+use rand::Rng;
+use reqwless::client::TlsConfig;
 use static_cell::StaticCell;
 
 pub const WEB_TASK_POOL_SIZE: usize = 8;
@@ -145,6 +141,12 @@ pub struct HttpBuffers {
     pub rx_buffer: [u8; 8192],
     pub tls_read_buffer: [u8; 8192],
     pub tls_write_buffer: [u8; 8192],
+}
+
+impl Default for HttpBuffers {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl HttpBuffers {

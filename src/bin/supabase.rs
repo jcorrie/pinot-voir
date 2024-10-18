@@ -4,20 +4,15 @@
 #![no_main]
 #![allow(async_fn_in_trait)]
 
-use core::fmt::{Error, Write};
-use core::str::from_utf8;
 
-use cyw43_pio::PioSpi;
-use defmt::{error, info, unwrap};
+use defmt::{error, info};
 use embassy_dht::dht22::DHT22;
 use embassy_executor::Spawner;
 use embassy_net::dns::DnsSocket;
 use embassy_net::tcp::client::TcpConnection;
 use embassy_net::tcp::client::{TcpClient, TcpClientState};
 use embassy_rp::clocks::RoscRng;
-use embassy_rp::gpio::{Level, Output};
 use embassy_time::{Delay, Duration, Timer};
-use pinot_voir::common::dht22_tools::sensor_reading_to_string;
 use pinot_voir::common::shared_functions::{
     blink_n_times, parse_env_variables, EnvironmentVariables,
 };

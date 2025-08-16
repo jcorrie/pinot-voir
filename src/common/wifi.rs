@@ -34,7 +34,6 @@ async fn net_task(mut runner: embassy_net::Runner<'static, cyw43::NetDriver<'sta
 
 pub struct EmbassyPicoWifiCore {
     pub control: Control<'static>,
-    pub runner: embassy_net::Runner<'static, cyw43::NetDriver<'static>>,
     pub tls_config: Option<TlsConfig<'static>>,
     pub stack: Stack<'static>,
 }
@@ -42,12 +41,10 @@ pub struct EmbassyPicoWifiCore {
 impl EmbassyPicoWifiCore {
     pub fn new(
         control: Control<'static>,
-        runner: embassy_net::Runner<'static, cyw43::NetDriver<'static>>,
         stack: Stack<'static>,
     ) -> Self {
         Self {
             control,
-            runner: runner,
             tls_config: None,
             stack: stack,
         }
@@ -103,11 +100,11 @@ impl EmbassyPicoWifiCore {
             seed,
         );
 
-        // spawner
-        //     .spawn(net_task(&runner))
-        //     .expect("failed to spawn net_task");
+        spawner
+            .spawn(net_task(runner))
+            .expect("failed to spawn net_task");
 
-        EmbassyPicoWifiCore::new(control, runner, stack)
+        EmbassyPicoWifiCore::new(control, stack)
     }
 
     pub async fn join_wpa2_network(
@@ -115,6 +112,8 @@ impl EmbassyPicoWifiCore {
         wifi_ssid: &str,
         wifi_password: &str,
     ) -> Result<(), cyw43::ControlError> {
+        info!("Joining network: {}", wifi_ssid);
+        info!("Using password: {}", wifi_password);
         while let Err(err) = self
             .control
             .join(wifi_ssid, JoinOptions::new(wifi_password.as_bytes()))

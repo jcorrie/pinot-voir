@@ -8,7 +8,6 @@ edition = "2024"
 embassy-embedded-hal = { version = "0.4.0", features = ["defmt"] }
 embassy-sync = { version = "0.7.1", features = ["defmt"] }
 embassy-executor = { version = "0.8.0", features = [
-    # "task-arena-size-98304",
     "arch-cortex-m",
     "executor-thread",
     "executor-interrupt",
@@ -41,7 +40,7 @@ defmt = "1.0.1"
 defmt-rtt = "1.0.0"
 
 # for web request example
-reqwless = { version = "0.12.0", features = ["defmt"] }
+reqwless = { version = "0.13.0", features = ["defmt"] }
 
 
 cortex-m = { version = "0.7.6", features = ["inline-asm"] }
@@ -58,7 +57,7 @@ portable-atomic = { version = "1.5", features = ["critical-section"] }
 rand = { version = "0.8.5", default-features = false }
 
 picoserve = { version = "0.16.0", features = ["embassy"] }
-# embassy-dht = { git = "https://github.com/jcorrie/embassy-dht", branch = "deps" }
+embassy-dht = { git = "https://github.com/jcorrie/embassy-dht", branch = "deps", default-features = false, features = ["dht22", "dht11", "dht20", "rp2040"] }
 
 [profile.release]
 debug = 2

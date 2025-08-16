@@ -5,10 +5,13 @@
 #![no_std]
 #![no_main]
 #![allow(async_fn_in_trait)]
-#![feature(type_alias_impl_trait)]
+#![feature(type_alias_impl_trait)] 
+#![feature(impl_trait_in_assoc_type)]
+
 
 use cyw43::Control;
 use defmt::*;
+use embassy_net::{Stack};
 use embassy_dht::Reading;
 use embassy_executor::Spawner;
 use embassy_net::dns::DnsSocket;
@@ -18,17 +21,18 @@ use embassy_rp::clocks::RoscRng;
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, mutex::Mutex};
 use embassy_time::{Delay, Duration, Timer};
 use picoserve::extract::State;
-use pinot_voir::common::dht22_tools::{DHT22ReadingResponse, DHT22};
+use pinot_voir::common::dht22_tools::{DHT22, DHT22ReadingResponse};
 use pinot_voir::common::shared_functions::{
-    blink_n_times, parse_env_variables, EnvironmentVariables,
+    EnvironmentVariables, blink_n_times, parse_env_variables,
 };
 use pinot_voir::common::supabase::{construct_post_request_arguments, read_http_response};
 use pinot_voir::common::wifi::{EmbassyPicoWifiCore, HttpBuffers, WEB_TASK_POOL_SIZE};
 use rand::RngCore;
 
 use picoserve::{
+    AppRouter, AppWithStateBuilder,
     response::DebugValue,
-    routing::{get, parse_path_segment},
+    routing::{PathRouter, get, get_service, parse_path_segment},
 };
 use reqwless::client::{HttpClient, HttpConnection, TlsConfig, TlsVerify};
 use reqwless::request::{Method, RequestBuilder};
@@ -37,13 +41,50 @@ use static_cell::make_static;
 
 use {defmt_rtt as _, panic_probe as _};
 
-type AppRouter = impl picoserve::routing::PathRouter<AppState>;
+
+
+
+struct AppProps;
+
+impl AppWithStateBuilder for AppProps {
+    type State = AppState;
+    type PathRouter = impl PathRouter<AppState>;
+
+    fn build_app(self) -> picoserve::Router<Self::PathRouter, Self::State> {
+        picoserve::Router::new()
+            .route("/", get(|| async move { "Hello world." }))
+            .route(
+                ("/set_led", parse_path_segment()),
+                get(
+                    |led_is_on, State(SharedControl(control)): State<SharedControl>| async move {
+                        control.lock().await.gpio_set(0, led_is_on).await;
+
+                        DebugValue(led_is_on)
+                    },
+                ),
+            )
+            .route(
+                "/read_sensor",
+                get(|State(SharedSensor(shared_sensor))| async move {
+                    let mut sensor = shared_sensor.lock().await;
+                    let dht_reading = sensor.read();
+                    match dht_reading {
+                        Ok(dht_reading) => Ok(DHT22ReadingResponse {
+                            temperature: dht_reading.get_temp(),
+                            humidity: dht_reading.get_hum(),
+                        }),
+                        Err(_) => Err("Error reading sensor - likely because two reads were too close together"),
+                    }
+                }),
+            )
+    }
+}
 
 #[embassy_executor::task(pool_size = WEB_TASK_POOL_SIZE)]
 async fn web_task(
     id: usize,
-    stack: &'static embassy_net::Stack<cyw43::NetDriver<'static>>,
-    app: &'static picoserve::Router<AppRouter, AppState>,
+    stack: embassy_net::Stack<'static>,
+    app: &'static AppRouter<AppProps>,
     config: &'static picoserve::Config<Duration>,
     state: AppState,
 ) -> ! {
@@ -115,45 +156,21 @@ async fn main(spawner: Spawner) {
     // And now we can use it!
     blink_n_times(&mut embassy_pico_wifi_core.control, 1).await;
 
-    fn make_app() -> picoserve::Router<AppRouter, AppState> {
-        picoserve::Router::new()
-            .route("/", get(|| async move { "Hello world." }))
-            .route(
-                ("/set_led", parse_path_segment()),
-                get(
-                    |led_is_on, State(SharedControl(control)): State<SharedControl>| async move {
-                        control.lock().await.gpio_set(0, led_is_on).await;
 
-                        DebugValue(led_is_on)
-                    },
-                ),
-            )
-            .route(
-                "/read_sensor",
-                get(|State(SharedSensor(shared_sensor))| async move {
-                    let mut sensor = shared_sensor.lock().await;
-                    let dht_reading = sensor.read();
-                    match dht_reading {
-                        Ok(dht_reading) => Ok(DHT22ReadingResponse {
-                            temperature: dht_reading.get_temp(),
-                            humidity: dht_reading.get_hum(),
-                        }),
-                        Err(_) => Err("Error reading sensor - likely because two reads were too close together"),
-                    }
-                }),
-            )
-    }
+    let app = make_static!(AppProps.build_app());
 
-    let app = make_static!(make_app());
 
     info!("Starting web server");
 
-    let config = make_static!(picoserve::Config::new(picoserve::Timeouts {
-        start_read_request: Some(Duration::from_secs(5)),
-        read_request: Some(Duration::from_secs(1)),
-        write: Some(Duration::from_secs(1)),
-    })
-    .keep_connection_alive());
+    let config = make_static!(
+        picoserve::Config::new(picoserve::Timeouts {
+            start_read_request: Some(Duration::from_secs(5)),
+            persistent_start_read_request: Some(Duration::from_secs(1)),
+            read_request: Some(Duration::from_secs(1)),
+            write: Some(Duration::from_secs(1)),
+        })
+        .keep_connection_alive()
+    );
 
     let shared_control: SharedControl =
         SharedControl(make_static!(Mutex::new(embassy_pico_wifi_core.control)));
@@ -164,7 +181,7 @@ async fn main(spawner: Spawner) {
     for id in 1..(WEB_TASK_POOL_SIZE - 3) {
         spawner.must_spawn(web_task(
             id,
-            embassy_pico_wifi_core.runner,
+            embassy_pico_wifi_core.stack,
             app,
             config,
             AppState {
@@ -179,7 +196,7 @@ async fn main(spawner: Spawner) {
     unwrap!(spawner.spawn(read_sensor(
         shared_sensor,
         environment_variables,
-        embassy_pico_wifi_core.runner,
+        embassy_pico_wifi_core.stack,
     )));
 }
 
@@ -187,7 +204,7 @@ async fn main(spawner: Spawner) {
 async fn read_sensor(
     sensor: SharedSensor<Delay>,
     environment_variables: &'static EnvironmentVariables,
-    stack: &'static embassy_net::Stack<cyw43::NetDriver<'static>>,
+    stack: Stack<'static>,
 ) {
     info!("A");
     let mut rng = RoscRng;

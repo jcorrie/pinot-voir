@@ -1,7 +1,7 @@
-// pub mod shared_functions;
+pub mod shared_functions;
 
-// pub mod dht22_tools;
+pub mod dht22_tools;
 
 pub mod wifi;
 
-// pub mod supabase;
+pub mod supabase;

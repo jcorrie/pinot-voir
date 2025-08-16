@@ -32,6 +32,7 @@ static CHANNEL: Channel<ThreadModeRawMutex, LedState, 64> = Channel::new();
 
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
+    info!("led on!");
     let p = embassy_rp::init(Default::default());
     let mut led = Output::new(p.PIN_15, Level::High);
 

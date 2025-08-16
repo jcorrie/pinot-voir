@@ -149,7 +149,7 @@ async fn main(spawner: Spawner) {
     for id in 1..(WEB_TASK_POOL_SIZE - 1) {
         spawner.must_spawn(web_task(
             id,
-            embassy_pico_wifi_core.stack,
+            embassy_pico_wifi_core.runner,
             app,
             config,
             AppState {

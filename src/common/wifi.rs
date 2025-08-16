@@ -1,15 +1,16 @@
 use cyw43::Control;
-use cyw43_pio::PioSpi;
+use cyw43::JoinOptions;
+use cyw43_pio::{DEFAULT_CLOCK_DIVIDER, PioSpi};
 use defmt::info;
 use embassy_executor::Spawner;
 use embassy_net::{Config, Stack, StackResources};
+use embassy_rp::Peri;
 use embassy_rp::bind_interrupts;
 use embassy_rp::gpio::{Level, Output};
 use embassy_rp::peripherals::{DMA_CH0, PIN_23, PIN_24, PIN_25, PIN_29, PIO0};
 use embassy_rp::pio::{InterruptHandler, Pio};
 use embassy_time::Timer;
-
-use rand::Rng;
+use embassy_rp::clocks::RoscRng;
 use reqwless::client::TlsConfig;
 use static_cell::StaticCell;
 
@@ -27,35 +28,38 @@ async fn wifi_task(
 }
 
 #[embassy_executor::task]
-async fn net_task(stack: &'static Stack<cyw43::NetDriver<'static>>) -> ! {
-    stack.run().await
+async fn net_task(mut runner: embassy_net::Runner<'static, cyw43::NetDriver<'static>>) -> ! {
+    runner.run().await
 }
 
 pub struct EmbassyPicoWifiCore {
     pub control: Control<'static>,
-    pub stack: &'static Stack<cyw43::NetDriver<'static>>,
+    pub runner: embassy_net::Runner<'static, cyw43::NetDriver<'static>>,
     pub tls_config: Option<TlsConfig<'static>>,
+    pub stack: Stack<'static>,
 }
 
 impl EmbassyPicoWifiCore {
     pub fn new(
         control: Control<'static>,
-        stack: &'static Stack<cyw43::NetDriver<'static>>,
+        runner: embassy_net::Runner<'static, cyw43::NetDriver<'static>>,
+        stack: Stack<'static>,
     ) -> Self {
         Self {
             control,
-            stack,
+            runner: runner,
             tls_config: None,
+            stack: stack,
         }
     }
 
     pub async fn initiate_wifi_prelude(
-        pin_23: PIN_23,
-        pin_24: PIN_24,
-        pin_25: PIN_25,
-        pin_29: PIN_29,
-        pio_0: PIO0,
-        dma_ch0: DMA_CH0,
+        pin_23: Peri<'static, PIN_23>,
+        pin_24: Peri<'static, PIN_24>,
+        pin_25: Peri<'static, PIN_25>,
+        pin_29: Peri<'static, PIN_29>,
+        pio_0: Peri<'static, PIO0>,
+        dma_ch0: Peri<'static, DMA_CH0>,
         spawner: Spawner,
     ) -> Self {
         let fw = include_bytes!("../../cyw43-firmware/43439A0.bin");
@@ -67,6 +71,7 @@ impl EmbassyPicoWifiCore {
         let spi = PioSpi::new(
             &mut pio.common,
             pio.sm0,
+            DEFAULT_CLOCK_DIVIDER,
             pio.irq0,
             cs,
             pin_24,
@@ -86,20 +91,23 @@ impl EmbassyPicoWifiCore {
             .await;
 
         // Init network stack
-        static STACK: StaticCell<Stack<cyw43::NetDriver<'static>>> = StaticCell::new();
+ 
         static RESOURCES: StaticCell<StackResources<WEB_TASK_POOL_SIZE>> = StaticCell::new();
-        let stack = &*STACK.init(Stack::new(
+        let mut rng = RoscRng;
+        let seed = rng.next_u64();
+
+        let (stack, runner) = embassy_net::new(
             net_device,
             config,
-            RESOURCES.init(StackResources::<WEB_TASK_POOL_SIZE>::new()),
-            embassy_rp::clocks::RoscRng.gen(),
-        ));
+            RESOURCES.init(StackResources::new()),
+            seed,
+        );
 
-        spawner
-            .spawn(net_task(stack))
-            .expect("failed to spawn net_task");
+        // spawner
+        //     .spawn(net_task(&runner))
+        //     .expect("failed to spawn net_task");
 
-        EmbassyPicoWifiCore::new(control, stack)
+        EmbassyPicoWifiCore::new(control, runner, stack)
     }
 
     pub async fn join_wpa2_network(
@@ -107,32 +115,23 @@ impl EmbassyPicoWifiCore {
         wifi_ssid: &str,
         wifi_password: &str,
     ) -> Result<(), cyw43::ControlError> {
-        loop {
-            match self.control.join_wpa2(wifi_ssid, wifi_password).await {
-                Ok(_) => break,
-                Err(err) => {
-                    info!("join failed with status={}", err.status);
-                    return Err(err);
-                }
-            }
+        while let Err(err) = self
+            .control
+            .join(wifi_ssid, JoinOptions::new(wifi_password.as_bytes()))
+            .await
+        {
+            info!("join failed with status={}", err.status);
         }
-        // Wait for DHCP, not necessary when using static IP
+        info!("waiting for link...");
+        self.stack.wait_link_up().await;
+
         info!("waiting for DHCP...");
-        while !self.stack.is_config_up() {
-            Timer::after_millis(100).await;
-        }
-        info!("DHCP is now up!");
-
-        info!("waiting for link up...");
-        while !self.stack.is_link_up() {
-            Timer::after_millis(500).await;
-        }
-        info!("Link is up!");
-
-        info!("waiting for stack to be up...");
         self.stack.wait_config_up().await;
+
+        // And now we can use it!
         info!("Stack is up!");
 
+        // And now we can use it!
         Ok(())
     }
 }

@@ -60,8 +60,8 @@ async fn main(spawner: Spawner) {
     );
 
     let client_state: TcpClientState<1, 1024, 1024> = TcpClientState::<1, 1024, 1024>::new();
-    let tcp_client = TcpClient::new(embassy_pico_wifi_core.runner, &client_state);
-    let dns_client = DnsSocket::new(embassy_pico_wifi_core.runner);
+    let tcp_client = TcpClient::new(embassy_pico_wifi_core.stack, &client_state);
+    let dns_client = DnsSocket::new(embassy_pico_wifi_core.stack);
     let mut http_client = HttpClient::new_with_tls(&tcp_client, &dns_client, tls_config);
 
     let mut dht_pin: DHT22<'_, Delay> = DHT22::new(p.PIN_16, Delay);

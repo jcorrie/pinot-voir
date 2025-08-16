@@ -240,28 +240,28 @@ async fn read_sensor(
         let (dht_reading_as_string, headers) =
             construct_post_request_arguments(dht_reading, environment_variables)
                 .expect("Failed to read dht reading");
-        // let mut request = match http_client
-        //     .request(Method::POST, environment_variables.supabase_url)
-        //     .await
-        // {
-        //     Ok(req) => req,
-        //     Err(e) => {
-        //         error!("Failed to make HTTP request: {:?}", e);
-        //         return; // handle the error
-        //     }
-        // }
-        // .headers(&headers)
-        // .body(dht_reading_as_string.as_bytes());
-        // let response: Response<'_, '_, HttpConnection<'_, TcpConnection<'_, 1, 1024, 1024>>> =
-        //     match request.send(&mut http_buffers.rx_buffer).await {
-        //         Ok(resp) => resp,
-        //         Err(_e) => {
-        //             error!("Failed to send HTTP request");
-        //             return; // handle the error;
-        //         }
-        //     };
+        let mut request = match http_client
+            .request(Method::POST, environment_variables.supabase_url)
+            .await
+        {
+            Ok(req) => req,
+            Err(e) => {
+                error!("Failed to make HTTP request: {:?}", e);
+                return; // handle the error
+            }
+        }
+        .headers(&headers)
+        .body(dht_reading_as_string.as_bytes());
+        let response: Response<'_, '_, HttpConnection<'_, TcpConnection<'_, 1, 1024, 1024>>> =
+            match request.send(&mut http_buffers.rx_buffer).await {
+                Ok(resp) => resp,
+                Err(_e) => {
+                    error!("Failed to send HTTP request");
+                    return; // handle the error;
+                }
+            };
 
-        // read_http_response(response).await;
+        read_http_response(response).await;
         Timer::after(delay_loop).await;
     }
 }

@@ -32,7 +32,7 @@ use rand::RngCore;
 use picoserve::{
     AppRouter, AppWithStateBuilder,
     response::DebugValue,
-    routing::{PathRouter, get, get_service, parse_path_segment},
+    routing::{PathRouter, get, parse_path_segment},
 };
 use reqwless::client::{HttpClient, HttpConnection, TlsConfig, TlsVerify};
 use reqwless::request::{Method, RequestBuilder};

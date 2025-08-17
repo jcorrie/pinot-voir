@@ -1,11 +1,12 @@
 use crate::common::shared_functions::{get_api_key_as_bearer_string, EnvironmentVariables};
 use core::fmt::{Error, Write};
 use defmt::info;
-pub use embassy_dht::dht22::DHT22;
 use embassy_dht::Reading;
 use heapless::String;
 use picoserve::response::IntoResponse;
-
+use serde::{Deserialize, Serialize};
+use picoserve::extract::Json;
+use serde_json_core::to_string;
 pub fn sensor_reading_to_string(reading: Reading<f32, f32>) -> Result<heapless::String<32>, Error> {
     let (temp, humi) = (reading.get_temp(), reading.get_hum());
     // Append static strings
@@ -25,26 +26,39 @@ pub fn ping_supabase_endpoint(environment_variables: &EnvironmentVariables) {
     ];
     info!("Pinging Supabase endpoint");
 }
-
-pub struct DHT22ReadingResponse<T: core::fmt::Display> {
-    pub temperature: T,
-    pub humidity: T,
+#[derive(Serialize, Deserialize, Clone, Copy)]
+pub struct SensorState {
+    pub temperature: Option<f32>,
+    pub humidity: Option<f32>,
+    pub brightness: Option<f32>,
+    pub loudness: Option<f32>,
 }
 
-impl<T: core::fmt::Display> IntoResponse for DHT22ReadingResponse<T> {
-    async fn write_to<
-        R: picoserve::io::Read,
-        W: picoserve::response::ResponseWriter<Error = R::Error>,
-    >(
-        self,
-        connection: picoserve::response::Connection<'_, R>,
-        response_writer: W,
-    ) -> Result<picoserve::ResponseSent, W::Error> {
-        format_args!(
-            "{{\"temperature\":{},\"humidity\":{}}}",
-            self.temperature, self.humidity
-        )
-        .write_to(connection, response_writer)
-        .await
+impl SensorState {
+    pub fn new() -> SensorState {
+        SensorState {
+            temperature: None,
+            humidity: None,
+            brightness: None,
+            loudness: None,
+        }
     }
 }
+
+// impl IntoResponse for SensorState {
+//     async fn write_to<
+//         R: picoserve::io::Read,
+//         W: picoserve::response::ResponseWriter<Error = R::Error>,
+//     >(
+//         self,
+//         connection: picoserve::response::Connection<'_, R>,
+//         response_writer: W,
+//     ) -> Result<picoserve::ResponseSent, W::Error> {
+//         format_args!(
+//             "{{\"temperature\":{:?},\"humidity\":{:?}}}",
+//             self.temperature, self.humidity
+//         )
+//         .write_to(connection, response_writer)
+//         .await
+//     }
+// }

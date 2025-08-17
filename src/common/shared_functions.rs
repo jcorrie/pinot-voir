@@ -60,7 +60,7 @@ pub fn parse_env_variables() -> EnvironmentVariables {
 pub fn get_api_key_as_bearer_string(api_key: &str) -> Result<heapless::String<256>, Error> {
     // Append static strings
     let mut owned_string: heapless::String<256> = String::<256>::new();
-    write!(owned_string, "Bearer {}", api_key)?;
+    write!(owned_string, "Bearer {api_key}")?;
     info!("Bearer token: {}", owned_string);
     Ok(owned_string)
 }

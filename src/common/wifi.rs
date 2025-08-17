@@ -9,7 +9,6 @@ use embassy_rp::bind_interrupts;
 use embassy_rp::gpio::{Level, Output};
 use embassy_rp::peripherals::{DMA_CH0, PIN_23, PIN_24, PIN_25, PIN_29, PIO0};
 use embassy_rp::pio::{InterruptHandler, Pio};
-use embassy_time::Timer;
 use embassy_rp::clocks::RoscRng;
 use reqwless::client::TlsConfig;
 use static_cell::StaticCell;
@@ -46,7 +45,7 @@ impl EmbassyPicoWifiCore {
         Self {
             control,
             tls_config: None,
-            stack: stack,
+            stack,
         }
     }
 

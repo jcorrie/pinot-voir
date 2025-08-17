@@ -5,44 +5,32 @@
 #![no_std]
 #![no_main]
 #![allow(async_fn_in_trait)]
-#![feature(type_alias_impl_trait)] 
+#![feature(type_alias_impl_trait)]
 #![feature(impl_trait_in_assoc_type)]
-
 
 use cyw43::Control;
 use defmt::*;
-use embassy_net::{Stack};
-use embassy_dht::Reading;
 use embassy_executor::Spawner;
-use embassy_net::dns::DnsSocket;
-use embassy_net::tcp::client::TcpConnection;
-use embassy_net::tcp::client::{TcpClient, TcpClientState};
-use embassy_rp::clocks::RoscRng;
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, mutex::Mutex};
-use embassy_time::{Delay, Duration, Timer};
+use embassy_time::{Delay, Duration};
+use picoserve::extract::Json;
 use picoserve::extract::State;
 use pinot_voir::common::dht22_tools::{DHT22, DHT22ReadingResponse};
+use pinot_voir::common::sensor_tools::SensorState;
 use pinot_voir::common::shared_functions::{
     EnvironmentVariables, blink_n_times, parse_env_variables,
 };
-use pinot_voir::common::supabase::{construct_post_request_arguments, read_http_response};
-use pinot_voir::common::wifi::{EmbassyPicoWifiCore, HttpBuffers, WEB_TASK_POOL_SIZE};
-use rand::RngCore;
+use pinot_voir::common::wifi::{EmbassyPicoWifiCore, WEB_TASK_POOL_SIZE};
 
 use picoserve::{
     AppRouter, AppWithStateBuilder,
     response::DebugValue,
-    routing::{PathRouter, get, get_service, parse_path_segment},
+    routing::{PathRouter, get, parse_path_segment},
 };
-use reqwless::client::{HttpClient, HttpConnection, TlsConfig, TlsVerify};
-use reqwless::request::{Method, RequestBuilder};
-use reqwless::response::Response;
+
 use static_cell::make_static;
 
 use {defmt_rtt as _, panic_probe as _};
-
-
-
 
 struct AppProps;
 
@@ -63,20 +51,30 @@ impl AppWithStateBuilder for AppProps {
                     },
                 ),
             )
+            // ...existing code...
             .route(
                 "/read_sensor",
-                get(|State(SharedSensor(shared_sensor))| async move {
-                    let mut sensor = shared_sensor.lock().await;
+                get(|State(app_state): State<AppState>| async move {
+                    let mut sensor = app_state.shared_sensor.0.lock().await;
                     let dht_reading = sensor.read();
                     match dht_reading {
-                        Ok(dht_reading) => Ok(DHT22ReadingResponse {
-                            temperature: dht_reading.get_temp(),
-                            humidity: dht_reading.get_hum(),
-                        }),
-                        Err(_) => Err("Error reading sensor - likely because two reads were too close together"),
+                        Ok(dht_reading) => {
+                            // You may want to return the reading as a string or JSON
+                            let mut sensor_state_lock =
+                                app_state.shared_sensor_state.0.lock().await;
+                            sensor_state_lock.humidity = Some(dht_reading.get_hum());
+                            sensor_state_lock.temperature = Some(dht_reading.get_temp());
+                        }
+                        Err(e) => info!(
+                            "Error reading sensor - likely because of two reads close together."
+                        ),
                     }
+
+                    let sensor_state = app_state.shared_sensor_state.0.lock().await;
+                    Json(*sensor_state)
                 }),
             )
+        // ...existing code...
     }
 }
 
@@ -113,9 +111,13 @@ struct SharedControl(&'static Mutex<CriticalSectionRawMutex, Control<'static>>);
 #[derive(Clone, Copy)]
 struct SharedSensor<D: 'static>(&'static Mutex<CriticalSectionRawMutex, DHT22<'static, D>>);
 
+#[derive(Clone, Copy)]
+struct SharedSensorsState(&'static Mutex<CriticalSectionRawMutex, SensorState>);
+
 struct AppState {
     shared_control: SharedControl,
     shared_sensor: SharedSensor<Delay>,
+    shared_sensor_state: SharedSensorsState,
 }
 
 impl picoserve::extract::FromRef<AppState> for SharedControl {
@@ -127,6 +129,22 @@ impl picoserve::extract::FromRef<AppState> for SharedControl {
 impl picoserve::extract::FromRef<AppState> for SharedSensor<Delay> {
     fn from_ref(state: &AppState) -> Self {
         state.shared_sensor.clone()
+    }
+}
+
+impl picoserve::extract::FromRef<AppState> for SharedSensorsState {
+    fn from_ref(state: &AppState) -> Self {
+        state.shared_sensor_state
+    }
+}
+
+impl picoserve::extract::FromRef<AppState> for AppState {
+    fn from_ref(state: &AppState) -> Self {
+        AppState {
+            shared_control: state.shared_control,
+            shared_sensor: state.shared_sensor.clone(),
+            shared_sensor_state: state.shared_sensor_state,
+        }
     }
 }
 
@@ -156,9 +174,7 @@ async fn main(spawner: Spawner) {
     // And now we can use it!
     blink_n_times(&mut embassy_pico_wifi_core.control, 1).await;
 
-
     let app = make_static!(AppProps.build_app());
-
 
     info!("Starting web server");
 
@@ -175,6 +191,7 @@ async fn main(spawner: Spawner) {
     let shared_control: SharedControl =
         SharedControl(make_static!(Mutex::new(embassy_pico_wifi_core.control)));
     let shared_sensor = SharedSensor(make_static!(Mutex::new(DHT22::new(p.PIN_16, Delay))));
+    let shared_sensor_state = SharedSensorsState(make_static!(Mutex::new(SensorState::new())));
 
     // for some reason, idk why, I can only spawn one less than the pool size
     // otherwise it panics
@@ -187,10 +204,10 @@ async fn main(spawner: Spawner) {
             AppState {
                 shared_control,
                 shared_sensor: shared_sensor.clone(),
+                shared_sensor_state,
             },
         ));
     }
 
     info!("Web server started");
-
 }

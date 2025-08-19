@@ -4,7 +4,6 @@
 #![no_main]
 #![allow(async_fn_in_trait)]
 
-
 use defmt::{error, info};
 use embassy_dht::dht22::DHT22;
 use embassy_executor::Spawner;
@@ -14,7 +13,7 @@ use embassy_net::tcp::client::{TcpClient, TcpClientState};
 use embassy_rp::clocks::RoscRng;
 use embassy_time::{Delay, Duration, Timer};
 use pinot_voir::common::shared_functions::{
-    blink_n_times, parse_env_variables, EnvironmentVariables,
+    EnvironmentVariables, blink_n_times, parse_env_variables,
 };
 use pinot_voir::common::supabase::{construct_post_request_arguments, read_http_response};
 use pinot_voir::common::wifi::{EmbassyPicoWifiCore, HttpBuffers};

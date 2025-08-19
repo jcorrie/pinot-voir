@@ -1,8 +1,8 @@
-use crate::common::shared_functions::{get_api_key_as_bearer_string, EnvironmentVariables};
+use crate::common::shared_functions::{EnvironmentVariables, get_api_key_as_bearer_string};
 use core::fmt::{Error, Write};
 use defmt::info;
-pub use embassy_dht::dht22::DHT22;
 use embassy_dht::Reading;
+pub use embassy_dht::dht22::DHT22;
 use heapless::String;
 use picoserve::response::IntoResponse;
 

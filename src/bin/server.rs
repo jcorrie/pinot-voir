@@ -11,6 +11,7 @@
 use cyw43::Control;
 use defmt::*;
 use embassy_executor::Spawner;
+
 use embassy_rp::Peri;
 use embassy_rp::peripherals::{DMA_CH0, PIN_23, PIN_24, PIN_25, PIN_29, PIO0};
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, mutex::Mutex};
@@ -23,7 +24,8 @@ use pinot_voir::common::shared_functions::{
     EnvironmentVariables, blink_n_times, parse_env_variables,
 };
 use pinot_voir::common::wifi::{
-    EmbassyPicoWifiCore, WEB_TASK_POOL_SIZE, connect_to_network, rejoin_wifi_loop_task,
+    EmbassyPicoWifiCore, SharedEmbassyWifiPicoCore, WEB_TASK_POOL_SIZE, connect_to_network,
+    rejoin_wifi_loop_task,
 };
 
 use picoserve::{
@@ -48,8 +50,11 @@ impl AppWithStateBuilder for AppProps {
             .route(
                 ("/set_led", parse_path_segment()),
                 get(
-                    |led_is_on, State(SharedControl(control)): State<SharedControl>| async move {
-                        control.lock().await.gpio_set(0, led_is_on).await;
+                    |led_is_on,
+                     State(SharedEmbassyWifiPicoCore(wifi_core)): State<
+                        SharedEmbassyWifiPicoCore,
+                    >| async move {
+                        wifi_core.lock().await.control.gpio_set(0, led_is_on).await;
 
                         DebugValue(led_is_on)
                     },
@@ -109,23 +114,20 @@ async fn web_task(
 }
 
 #[derive(Clone, Copy)]
-struct SharedControl(&'static Mutex<CriticalSectionRawMutex, Control<'static>>);
-
-#[derive(Clone, Copy)]
 struct SharedSensor<D: 'static>(&'static Mutex<CriticalSectionRawMutex, DHT22<'static, D>>);
 
 #[derive(Clone, Copy)]
 struct SharedSensorsState(&'static Mutex<CriticalSectionRawMutex, SensorState>);
 
 struct AppState {
-    shared_control: SharedControl,
+    shared_wifi_core: SharedEmbassyWifiPicoCore,
     shared_sensor: SharedSensor<Delay>,
     shared_sensor_state: SharedSensorsState,
 }
 
-impl picoserve::extract::FromRef<AppState> for SharedControl {
+impl picoserve::extract::FromRef<AppState> for SharedEmbassyWifiPicoCore {
     fn from_ref(state: &AppState) -> Self {
-        state.shared_control
+        state.shared_wifi_core
     }
 }
 
@@ -144,7 +146,7 @@ impl picoserve::extract::FromRef<AppState> for SharedSensorsState {
 impl picoserve::extract::FromRef<AppState> for AppState {
     fn from_ref(state: &AppState) -> Self {
         AppState {
-            shared_control: state.shared_control,
+            shared_wifi_core: state.shared_wifi_core,
             shared_sensor: state.shared_sensor.clone(),
             shared_sensor_state: state.shared_sensor_state,
         }
@@ -187,29 +189,28 @@ async fn main(spawner: Spawner) {
         .keep_connection_alive()
     );
 
-    let embassy_pico_wifi_core = make_static!(Mutex::new(embassy_pico_wifi_core));
+    let shared_wifi_core: SharedEmbassyWifiPicoCore =
+        SharedEmbassyWifiPicoCore(make_static!(Mutex::new(embassy_pico_wifi_core)));
+    let shared_sensor = SharedSensor(make_static!(Mutex::new(DHT22::new(p.PIN_16, Delay))));
+    let shared_sensor_state = SharedSensorsState(make_static!(Mutex::new(SensorState::new())));
+
     spawner
         .spawn(rejoin_wifi_loop_task(
-            embassy_pico_wifi_core,
+            shared_wifi_core,
             &environment_variables,
         ))
         .unwrap();
-
-    let shared_control: SharedControl =
-        SharedControl(make_static!(Mutex::new(embassy_pico_wifi_core.l)));
-    let shared_sensor = SharedSensor(make_static!(Mutex::new(DHT22::new(p.PIN_16, Delay))));
-    let shared_sensor_state = SharedSensorsState(make_static!(Mutex::new(SensorState::new())));
 
     // for some reason, idk why, I can only spawn one less than the pool size
     // otherwise it panics
     for id in 1..(WEB_TASK_POOL_SIZE - 3) {
         spawner.must_spawn(web_task(
             id,
-            embassy_pico_wifi_core.lock().await.stack,
+            shared_wifi_core.0.lock().await.stack,
             app,
             config,
             AppState {
-                shared_control,
+                shared_wifi_core,
                 shared_sensor: shared_sensor.clone(),
                 shared_sensor_state,
             },

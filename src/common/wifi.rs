@@ -1,4 +1,5 @@
 use crate::common::shared_functions::{EnvironmentVariables, blink_n_times, parse_env_variables};
+
 use cyw43::Control;
 use cyw43::JoinOptions;
 use cyw43_pio::{DEFAULT_CLOCK_DIVIDER, PioSpi};
@@ -33,6 +34,11 @@ async fn wifi_task(
 async fn net_task(mut runner: embassy_net::Runner<'static, cyw43::NetDriver<'static>>) -> ! {
     runner.run().await
 }
+
+#[derive(Clone, Copy)]
+pub struct SharedEmbassyWifiPicoCore(
+    pub &'static Mutex<CriticalSectionRawMutex, EmbassyPicoWifiCore>,
+);
 
 pub struct EmbassyPicoWifiCore {
     pub control: Control<'static>,
@@ -127,24 +133,6 @@ impl EmbassyPicoWifiCore {
         info!("Stack is up!");
         Ok(())
     }
-
-    // #[embassy_executor::task()]
-    // pub async fn rejoin_wifi_loop_task(env: EnvironmentVariables) {
-    //     const RECONNECT_DELAY: Duration = Duration::from_secs(5);
-    //     loop {
-    //         //     if self.stack.is_link_up() {
-    //         //         info!("WiFi link down, attempting reconnection...");
-    //         //         match self
-    //         //             .join_wpa2_network(env.wifi_ssid, env.wifi_password)
-    //         //             .await
-    //         //         {
-    //         //             Ok(_) => info!("Rejoined WiFi."),
-    //         //             Err(e) => info!("WiFi rejoin failed: status={}", e.status),
-    //         //         }
-    //         //     }
-    //         Timer::after(RECONNECT_DELAY).await;
-    //     }
-    // }
 }
 
 pub struct HttpBuffers {
@@ -203,12 +191,12 @@ pub async fn connect_to_network(
 
 #[embassy_executor::task]
 pub async fn rejoin_wifi_loop_task(
-    wifi_core: &'static Mutex<CriticalSectionRawMutex, EmbassyPicoWifiCore>,
+    shared_wifi_core: SharedEmbassyWifiPicoCore,
     env: &'static EnvironmentVariables,
 ) {
     const RECONNECT_DELAY: Duration = Duration::from_secs(5);
     loop {
-        let mut wifi_core = wifi_core.lock().await;
+        let mut wifi_core = shared_wifi_core.0.lock().await;
         if !wifi_core.stack.is_link_up() {
             info!("WiFi link down, attempting reconnection...");
             match wifi_core

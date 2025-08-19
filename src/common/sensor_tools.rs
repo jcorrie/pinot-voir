@@ -1,11 +1,11 @@
-use crate::common::shared_functions::{get_api_key_as_bearer_string, EnvironmentVariables};
+use crate::common::shared_functions::{EnvironmentVariables, get_api_key_as_bearer_string};
 use core::fmt::{Error, Write};
 use defmt::info;
 use embassy_dht::Reading;
 use heapless::String;
+use picoserve::extract::Json;
 use picoserve::response::IntoResponse;
 use serde::{Deserialize, Serialize};
-use picoserve::extract::Json;
 use serde_json_core::to_string;
 pub fn sensor_reading_to_string(reading: Reading<f32, f32>) -> Result<heapless::String<32>, Error> {
     let (temp, humi) = (reading.get_temp(), reading.get_hum());

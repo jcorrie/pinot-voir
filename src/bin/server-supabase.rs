@@ -5,15 +5,14 @@
 #![no_std]
 #![no_main]
 #![allow(async_fn_in_trait)]
-#![feature(type_alias_impl_trait)] 
+#![feature(type_alias_impl_trait)]
 #![feature(impl_trait_in_assoc_type)]
-
 
 use cyw43::Control;
 use defmt::*;
-use embassy_net::{Stack};
 use embassy_dht::Reading;
 use embassy_executor::Spawner;
+use embassy_net::Stack;
 use embassy_net::dns::DnsSocket;
 use embassy_net::tcp::client::TcpConnection;
 use embassy_net::tcp::client::{TcpClient, TcpClientState};
@@ -40,9 +39,6 @@ use reqwless::response::Response;
 use static_cell::make_static;
 
 use {defmt_rtt as _, panic_probe as _};
-
-
-
 
 struct AppProps;
 
@@ -156,9 +152,7 @@ async fn main(spawner: Spawner) {
     // And now we can use it!
     blink_n_times(&mut embassy_pico_wifi_core.control, 1).await;
 
-
     let app = make_static!(AppProps.build_app());
-
 
     info!("Starting web server");
 

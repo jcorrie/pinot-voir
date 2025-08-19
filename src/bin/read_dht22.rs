@@ -1,7 +1,7 @@
 #![no_std]
 #![no_main]
 
-use cyw43_pio::{PioSpi, DEFAULT_CLOCK_DIVIDER};
+use cyw43_pio::{DEFAULT_CLOCK_DIVIDER, PioSpi};
 use defmt::*;
 use embassy_dht::dht22::DHT22;
 use embassy_executor::Spawner;

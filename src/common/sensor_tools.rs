@@ -44,21 +44,3 @@ impl SensorState {
         }
     }
 }
-
-// impl IntoResponse for SensorState {
-//     async fn write_to<
-//         R: picoserve::io::Read,
-//         W: picoserve::response::ResponseWriter<Error = R::Error>,
-//     >(
-//         self,
-//         connection: picoserve::response::Connection<'_, R>,
-//         response_writer: W,
-//     ) -> Result<picoserve::ResponseSent, W::Error> {
-//         format_args!(
-//             "{{\"temperature\":{:?},\"humidity\":{:?}}}",
-//             self.temperature, self.humidity
-//         )
-//         .write_to(connection, response_writer)
-//         .await
-//     }
-// }

@@ -1,3 +1,4 @@
+use crate::common::shared_functions::{EnvironmentVariables, blink_n_times, parse_env_variables};
 use cyw43::Control;
 use cyw43::JoinOptions;
 use cyw43_pio::{DEFAULT_CLOCK_DIVIDER, PioSpi};
@@ -6,14 +7,16 @@ use embassy_executor::Spawner;
 use embassy_net::{Config, Stack, StackResources};
 use embassy_rp::Peri;
 use embassy_rp::bind_interrupts;
+use embassy_rp::clocks::RoscRng;
 use embassy_rp::gpio::{Level, Output};
 use embassy_rp::peripherals::{DMA_CH0, PIN_23, PIN_24, PIN_25, PIN_29, PIO0};
 use embassy_rp::pio::{InterruptHandler, Pio};
-use embassy_rp::clocks::RoscRng;
+use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, mutex::Mutex};
+use embassy_time::{Delay, Duration, Timer};
 use reqwless::client::TlsConfig;
 use static_cell::StaticCell;
 
-pub const WEB_TASK_POOL_SIZE: usize = 8;
+pub const WEB_TASK_POOL_SIZE: usize = 12;
 
 bind_interrupts!(struct Irqs {
     PIO0_IRQ_0 => InterruptHandler<PIO0>;
@@ -38,10 +41,7 @@ pub struct EmbassyPicoWifiCore {
 }
 
 impl EmbassyPicoWifiCore {
-    pub fn new(
-        control: Control<'static>,
-        stack: Stack<'static>,
-    ) -> Self {
+    pub fn new(control: Control<'static>, stack: Stack<'static>) -> Self {
         Self {
             control,
             tls_config: None,
@@ -86,8 +86,6 @@ impl EmbassyPicoWifiCore {
             .set_power_management(cyw43::PowerManagementMode::PowerSave)
             .await;
 
-        // Init network stack
- 
         static RESOURCES: StaticCell<StackResources<WEB_TASK_POOL_SIZE>> = StaticCell::new();
         let mut rng = RoscRng;
         let seed = rng.next_u64();
@@ -126,12 +124,27 @@ impl EmbassyPicoWifiCore {
         info!("waiting for DHCP...");
         self.stack.wait_config_up().await;
 
-        // And now we can use it!
         info!("Stack is up!");
-
-        // And now we can use it!
         Ok(())
     }
+
+    // #[embassy_executor::task()]
+    // pub async fn rejoin_wifi_loop_task(env: EnvironmentVariables) {
+    //     const RECONNECT_DELAY: Duration = Duration::from_secs(5);
+    //     loop {
+    //         //     if self.stack.is_link_up() {
+    //         //         info!("WiFi link down, attempting reconnection...");
+    //         //         match self
+    //         //             .join_wpa2_network(env.wifi_ssid, env.wifi_password)
+    //         //             .await
+    //         //         {
+    //         //             Ok(_) => info!("Rejoined WiFi."),
+    //         //             Err(e) => info!("WiFi rejoin failed: status={}", e.status),
+    //         //         }
+    //         //     }
+    //         Timer::after(RECONNECT_DELAY).await;
+    //     }
+    // }
 }
 
 pub struct HttpBuffers {
@@ -153,5 +166,60 @@ impl HttpBuffers {
             tls_read_buffer: [0; 8192],
             tls_write_buffer: [0; 8192],
         }
+    }
+}
+
+pub async fn connect_to_network(
+    pin_23: Peri<'static, PIN_23>,
+    pin_24: Peri<'static, PIN_24>,
+    pin_25: Peri<'static, PIN_25>,
+    pin_29: Peri<'static, PIN_29>,
+    pio0: Peri<'static, PIO0>,
+    dma_ch0: Peri<'static, DMA_CH0>,
+    spawner: Spawner,
+    environment_variables: &EnvironmentVariables,
+) -> EmbassyPicoWifiCore {
+    let mut embassy_pico_wifi_core = EmbassyPicoWifiCore::initiate_wifi_prelude(
+        pin_23, pin_24, pin_25, pin_29, pio0, dma_ch0, spawner,
+    )
+    .await;
+
+    let successful_join = embassy_pico_wifi_core
+        .join_wpa2_network(
+            environment_variables.wifi_ssid,
+            environment_variables.wifi_password,
+        )
+        .await;
+    match successful_join {
+        Ok(_) => info!("Successfully joined network"),
+        Err(_) => info!("Failed to join network"),
+    }
+
+    // And now we can use it!
+    blink_n_times(&mut embassy_pico_wifi_core.control, 1).await;
+
+    embassy_pico_wifi_core
+}
+
+#[embassy_executor::task]
+pub async fn rejoin_wifi_loop_task(
+    wifi_core: &'static Mutex<CriticalSectionRawMutex, EmbassyPicoWifiCore>,
+    env: &'static EnvironmentVariables,
+) {
+    const RECONNECT_DELAY: Duration = Duration::from_secs(5);
+    loop {
+        let mut wifi_core = wifi_core.lock().await;
+        if !wifi_core.stack.is_link_up() {
+            info!("WiFi link down, attempting reconnection...");
+            match wifi_core
+                .join_wpa2_network(env.wifi_ssid, env.wifi_password)
+                .await
+            {
+                Ok(_) => info!("Rejoined WiFi."),
+                Err(e) => info!("WiFi rejoin failed: status={}", e.status),
+            }
+        }
+        // Use stack here
+        Timer::after(RECONNECT_DELAY).await;
     }
 }

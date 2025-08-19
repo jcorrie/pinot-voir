@@ -18,6 +18,7 @@ pub async fn blink_n_times(control: &mut cyw43::Control<'_>, n: i32) {
     }
 }
 
+#[derive(Debug, Copy, Clone)]
 pub struct EnvironmentVariables {
     pub wifi_ssid: &'static str,
     pub wifi_password: &'static str,

@@ -11,6 +11,8 @@
 use cyw43::Control;
 use defmt::*;
 use embassy_executor::Spawner;
+use embassy_rp::Peri;
+use embassy_rp::peripherals::{DMA_CH0, PIN_23, PIN_24, PIN_25, PIN_29, PIO0};
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, mutex::Mutex};
 use embassy_time::{Delay, Duration};
 use picoserve::extract::Json;
@@ -20,7 +22,9 @@ use pinot_voir::common::sensor_tools::SensorState;
 use pinot_voir::common::shared_functions::{
     EnvironmentVariables, blink_n_times, parse_env_variables,
 };
-use pinot_voir::common::wifi::{EmbassyPicoWifiCore, WEB_TASK_POOL_SIZE};
+use pinot_voir::common::wifi::{
+    EmbassyPicoWifiCore, WEB_TASK_POOL_SIZE, connect_to_network, rejoin_wifi_loop_task,
+};
 
 use picoserve::{
     AppRouter, AppWithStateBuilder,
@@ -59,7 +63,6 @@ impl AppWithStateBuilder for AppProps {
                     let dht_reading = sensor.read();
                     match dht_reading {
                         Ok(dht_reading) => {
-                            // You may want to return the reading as a string or JSON
                             let mut sensor_state_lock =
                                 app_state.shared_sensor_state.0.lock().await;
                             sensor_state_lock.humidity = Some(dht_reading.get_hum());
@@ -155,21 +158,17 @@ async fn main(spawner: Spawner) {
     // Wifi prelude
     info!("Hello World!");
 
-    let mut embassy_pico_wifi_core = EmbassyPicoWifiCore::initiate_wifi_prelude(
-        p.PIN_23, p.PIN_24, p.PIN_25, p.PIN_29, p.PIO0, p.DMA_CH0, spawner,
+    let mut embassy_pico_wifi_core = connect_to_network(
+        p.PIN_23,
+        p.PIN_24,
+        p.PIN_25,
+        p.PIN_29,
+        p.PIO0,
+        p.DMA_CH0,
+        spawner,
+        environment_variables,
     )
     .await;
-
-    let successful_join = embassy_pico_wifi_core
-        .join_wpa2_network(
-            environment_variables.wifi_ssid,
-            environment_variables.wifi_password,
-        )
-        .await;
-    match successful_join {
-        Ok(_) => info!("Successfully joined network"),
-        Err(_) => info!("Failed to join network"),
-    }
 
     // And now we can use it!
     blink_n_times(&mut embassy_pico_wifi_core.control, 1).await;
@@ -188,8 +187,16 @@ async fn main(spawner: Spawner) {
         .keep_connection_alive()
     );
 
+    let embassy_pico_wifi_core = make_static!(Mutex::new(embassy_pico_wifi_core));
+    spawner
+        .spawn(rejoin_wifi_loop_task(
+            embassy_pico_wifi_core,
+            &environment_variables,
+        ))
+        .unwrap();
+
     let shared_control: SharedControl =
-        SharedControl(make_static!(Mutex::new(embassy_pico_wifi_core.control)));
+        SharedControl(make_static!(Mutex::new(embassy_pico_wifi_core.l)));
     let shared_sensor = SharedSensor(make_static!(Mutex::new(DHT22::new(p.PIN_16, Delay))));
     let shared_sensor_state = SharedSensorsState(make_static!(Mutex::new(SensorState::new())));
 
@@ -198,7 +205,7 @@ async fn main(spawner: Spawner) {
     for id in 1..(WEB_TASK_POOL_SIZE - 3) {
         spawner.must_spawn(web_task(
             id,
-            embassy_pico_wifi_core.stack,
+            embassy_pico_wifi_core.lock().await.stack,
             app,
             config,
             AppState {

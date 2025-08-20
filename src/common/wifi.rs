@@ -19,7 +19,7 @@ use static_cell::StaticCell;
 
 pub const WEB_TASK_POOL_SIZE: usize = 12;
 
-pub const FLASH_NEW_FIRMWARE: bool = true;
+pub const FLASH_NEW_FIRMWARE: bool = false;
 
 bind_interrupts!(struct Irqs {
     PIO0_IRQ_0 => InterruptHandler<PIO0>;

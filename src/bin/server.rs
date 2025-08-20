@@ -76,7 +76,7 @@ impl AppWithStateBuilder for AppProps {
                             sensor_state_lock.humidity = Some(dht_reading.get_hum());
                             sensor_state_lock.temperature = Some(dht_reading.get_temp());
                         }
-                        Err(e) => info!(
+                        Err(_e) => info!(
                             "Error reading sensor - likely because of two reads close together."
                         ),
                     }

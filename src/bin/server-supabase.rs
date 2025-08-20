@@ -24,7 +24,6 @@ use pinot_voir::common::dht22_tools::{DHT22, DHT22ReadingResponse};
 use pinot_voir::common::shared_functions::{EnvironmentVariables, blink_n_times};
 use pinot_voir::common::supabase::{construct_post_request_arguments, read_http_response};
 use pinot_voir::common::wifi::{EmbassyPicoWifiCore, HttpBuffers, WEB_TASK_POOL_SIZE};
-use rand::RngCore;
 
 use picoserve::{
     AppRouter, AppWithStateBuilder,

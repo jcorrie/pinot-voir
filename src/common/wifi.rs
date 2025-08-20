@@ -180,6 +180,12 @@ impl EmbassyPicoWifiCore {
         info!("Stack is up!");
         Ok(())
     }
+
+    pub async fn disconnect_from_network(&mut self) {
+        info!("Starting to disconnect from network.");
+        self.control.leave().await;
+        info!("Left network.");
+    }
 }
 
 pub struct HttpBuffers {

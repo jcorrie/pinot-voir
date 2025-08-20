@@ -19,7 +19,6 @@ use static_cell::StaticCell;
 
 pub const WEB_TASK_POOL_SIZE: usize = 12;
 
-pub const FLASH_NEW_FIRMWARE: bool = false;
 
 bind_interrupts!(struct Irqs {
     PIO0_IRQ_0 => InterruptHandler<PIO0>;
@@ -60,6 +59,8 @@ impl EmbassyPicoWifiCore {
     ) -> Self {
         let fw: &[u8];
         let clm: &[u8];
+
+        pub const FLASH_NEW_FIRMWARE: bool = true;
 
         match FLASH_NEW_FIRMWARE {
             true => {

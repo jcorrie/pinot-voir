@@ -42,6 +42,7 @@ impl AppWithStateBuilder for AppProps {
             .route(
                 "/disconnect",
                 get(|State(app_state): State<AppState>| async move {
+                    info!("Received disconnect");
                     app_state
                         .shared_wifi_core
                         .0

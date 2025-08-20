@@ -7,25 +7,17 @@
 #![allow(async_fn_in_trait)]
 #![feature(type_alias_impl_trait)]
 #![feature(impl_trait_in_assoc_type)]
-
-use cyw43::Control;
 use defmt::*;
 use embassy_executor::Spawner;
-
-use embassy_rp::Peri;
-use embassy_rp::peripherals::{DMA_CH0, PIN_23, PIN_24, PIN_25, PIN_29, PIO0};
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, mutex::Mutex};
 use embassy_time::{Delay, Duration};
 use picoserve::extract::Json;
 use picoserve::extract::State;
-use pinot_voir::common::dht22_tools::{DHT22, DHT22ReadingResponse};
+use pinot_voir::common::dht22_tools::DHT22;
 use pinot_voir::common::sensor_tools::SensorState;
-use pinot_voir::common::shared_functions::{
-    EnvironmentVariables, blink_n_times, parse_env_variables,
-};
+use pinot_voir::common::shared_functions::{EnvironmentVariables, blink_n_times};
 use pinot_voir::common::wifi::{
-    EmbassyPicoWifiCore, SharedEmbassyWifiPicoCore, WEB_TASK_POOL_SIZE, connect_to_network,
-    rejoin_wifi_loop_task,
+    EmbassyPicoWifiCore, SharedEmbassyWifiPicoCore, WEB_TASK_POOL_SIZE, wifi_autoheal_task,
 };
 
 use picoserve::{
@@ -60,7 +52,6 @@ impl AppWithStateBuilder for AppProps {
                     },
                 ),
             )
-            // ...existing code...
             .route(
                 "/read_sensor",
                 get(|State(app_state): State<AppState>| async move {
@@ -155,12 +146,13 @@ impl picoserve::extract::FromRef<AppState> for AppState {
 
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
-    let environment_variables: &'static EnvironmentVariables = make_static!(parse_env_variables());
+    let environment_variables: &'static EnvironmentVariables =
+        make_static!(EnvironmentVariables::new());
     let p = embassy_rp::init(Default::default());
     // Wifi prelude
     info!("Hello World!");
 
-    let mut embassy_pico_wifi_core = connect_to_network(
+    let mut embassy_pico_wifi_core = EmbassyPicoWifiCore::connect_to_network(
         p.PIN_23,
         p.PIN_24,
         p.PIN_25,
@@ -195,10 +187,7 @@ async fn main(spawner: Spawner) {
     let shared_sensor_state = SharedSensorsState(make_static!(Mutex::new(SensorState::new())));
 
     spawner
-        .spawn(rejoin_wifi_loop_task(
-            shared_wifi_core,
-            &environment_variables,
-        ))
+        .spawn(wifi_autoheal_task(shared_wifi_core, environment_variables))
         .unwrap();
 
     // for some reason, idk why, I can only spawn one less than the pool size

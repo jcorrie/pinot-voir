@@ -3,10 +3,7 @@ use core::fmt::{Error, Write};
 use defmt::info;
 use embassy_dht::Reading;
 use heapless::String;
-use picoserve::extract::Json;
-use picoserve::response::IntoResponse;
 use serde::{Deserialize, Serialize};
-use serde_json_core::to_string;
 pub fn sensor_reading_to_string(reading: Reading<f32, f32>) -> Result<heapless::String<32>, Error> {
     let (temp, humi) = (reading.get_temp(), reading.get_hum());
     // Append static strings
@@ -16,22 +13,19 @@ pub fn sensor_reading_to_string(reading: Reading<f32, f32>) -> Result<heapless::
     Ok(body_string)
 }
 
-pub fn ping_supabase_endpoint(environment_variables: &EnvironmentVariables) {
-    let bearer_token = get_api_key_as_bearer_string(environment_variables.supabase_key)
-        .expect("Failed to get API key as bearer string");
-    let _headers = [
-        ("Content-Type", "application/x-www-form-urlencoded"),
-        ("apikey", environment_variables.supabase_key),
-        ("Authorization", bearer_token.as_str()),
-    ];
-    info!("Pinging Supabase endpoint");
-}
+
 #[derive(Serialize, Deserialize, Clone, Copy)]
 pub struct SensorState {
     pub temperature: Option<f32>,
     pub humidity: Option<f32>,
     pub brightness: Option<f32>,
     pub loudness: Option<f32>,
+}
+
+impl Default for SensorState {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl SensorState {

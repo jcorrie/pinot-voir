@@ -2,6 +2,7 @@
 
 #![no_std]
 #![no_main]
+#![feature(type_alias_impl_trait)]
 #![allow(async_fn_in_trait)]
 
 use defmt::{error, info};
@@ -12,40 +13,36 @@ use embassy_net::tcp::client::TcpConnection;
 use embassy_net::tcp::client::{TcpClient, TcpClientState};
 use embassy_rp::clocks::RoscRng;
 use embassy_time::{Delay, Duration, Timer};
-use pinot_voir::common::shared_functions::{
-    EnvironmentVariables, blink_n_times, parse_env_variables,
-};
+use pinot_voir::common::shared_functions::{EnvironmentVariables, blink_n_times};
 use pinot_voir::common::supabase::{construct_post_request_arguments, read_http_response};
 use pinot_voir::common::wifi::{EmbassyPicoWifiCore, HttpBuffers};
-use rand::RngCore;
 use reqwless::client::{HttpClient, HttpConnection, TlsConfig, TlsVerify};
 use reqwless::request::{Method, RequestBuilder};
 use reqwless::response::Response;
+use static_cell::make_static;
 
 use {defmt_rtt as _, panic_probe as _};
 
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
-    let environment_variables: EnvironmentVariables = parse_env_variables();
+    let environment_variables: &'static EnvironmentVariables =
+        make_static!(EnvironmentVariables::new());
     let p = embassy_rp::init(Default::default());
     // Wifi prelude
     info!("Hello World!");
 
-    let mut embassy_pico_wifi_core = EmbassyPicoWifiCore::initiate_wifi_prelude(
-        p.PIN_23, p.PIN_24, p.PIN_25, p.PIN_29, p.PIO0, p.DMA_CH0, spawner,
+    let mut embassy_pico_wifi_core = EmbassyPicoWifiCore::connect_to_network(
+        p.PIN_23,
+        p.PIN_24,
+        p.PIN_25,
+        p.PIN_29,
+        p.PIO0,
+        p.DMA_CH0,
+        spawner,
+        environment_variables,
     )
     .await;
 
-    let successful_join = embassy_pico_wifi_core
-        .join_wpa2_network(
-            environment_variables.wifi_ssid,
-            environment_variables.wifi_password,
-        )
-        .await;
-    match successful_join {
-        Ok(_) => info!("Successfully joined network"),
-        Err(_) => info!("Failed to join network"),
-    }
     blink_n_times(&mut embassy_pico_wifi_core.control, 1).await;
     let mut rng = RoscRng;
     let seed = rng.next_u64();

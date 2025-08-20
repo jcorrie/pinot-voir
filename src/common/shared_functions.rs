@@ -26,35 +26,37 @@ pub struct EnvironmentVariables {
     pub supabase_key: &'static str,
 }
 
-pub fn parse_env_variables() -> EnvironmentVariables {
-    let env_file: &str = include_str!("../../.env");
-    let mut ssid: Option<&str> = None;
-    let mut password: Option<&str> = None;
-    let mut supabase_url: Option<&str> = None;
-    let mut supabase_key: Option<&str> = None;
+impl EnvironmentVariables {
+    pub fn new() -> EnvironmentVariables {
+        let env_file: &str = include_str!("../../.env");
+        let mut ssid: Option<&str> = None;
+        let mut password: Option<&str> = None;
+        let mut supabase_url: Option<&str> = None;
+        let mut supabase_key: Option<&str> = None;
 
-    for line in env_file.lines() {
-        if let Some((key, value)) = line.split_once('=') {
-            match key {
-                "WIFI_SSID" => ssid = Some(value),
-                "PASSWORD" => password = Some(value),
-                "SUPABASE_URL" => supabase_url = Some(value),
-                "SUPABASE_KEY" => supabase_key = Some(value),
-                _ => {}
+        for line in env_file.lines() {
+            if let Some((key, value)) = line.split_once('=') {
+                match key {
+                    "WIFI_SSID" => ssid = Some(value),
+                    "PASSWORD" => password = Some(value),
+                    "SUPABASE_URL" => supabase_url = Some(value),
+                    "SUPABASE_KEY" => supabase_key = Some(value),
+                    _ => {}
+                }
             }
         }
-    }
 
-    let wifi_ssid = ssid.expect("SSID not found in .env file");
-    let wifi_password = password.expect("Password not found in .env file");
-    let supabase_url = supabase_url.expect("Supabase URL not found in .env file");
-    let supabase_key = supabase_key.expect("Supabase key not found in .env file");
+        let wifi_ssid = ssid.expect("SSID not found in .env file");
+        let wifi_password = password.expect("Password not found in .env file");
+        let supabase_url = supabase_url.expect("Supabase URL not found in .env file");
+        let supabase_key = supabase_key.expect("Supabase key not found in .env file");
 
-    EnvironmentVariables {
-        wifi_ssid,
-        wifi_password,
-        supabase_url,
-        supabase_key,
+        EnvironmentVariables {
+            wifi_ssid,
+            wifi_password,
+            supabase_url,
+            supabase_key,
+        }
     }
 }
 

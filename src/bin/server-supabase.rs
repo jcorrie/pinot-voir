@@ -21,9 +21,7 @@ use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, mutex::Mutex};
 use embassy_time::{Delay, Duration, Timer};
 use picoserve::extract::State;
 use pinot_voir::common::dht22_tools::{DHT22, DHT22ReadingResponse};
-use pinot_voir::common::shared_functions::{
-    EnvironmentVariables, blink_n_times, parse_env_variables,
-};
+use pinot_voir::common::shared_functions::{EnvironmentVariables, blink_n_times};
 use pinot_voir::common::supabase::{construct_post_request_arguments, read_http_response};
 use pinot_voir::common::wifi::{EmbassyPicoWifiCore, HttpBuffers, WEB_TASK_POOL_SIZE};
 use rand::RngCore;
@@ -128,26 +126,17 @@ impl picoserve::extract::FromRef<AppState> for SharedSensor<Delay> {
 
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
-    let environment_variables: &'static EnvironmentVariables = make_static!(parse_env_variables());
+    let environment_variables: &'static EnvironmentVariables =
+        make_static!(EnvironmentVariables::new());
     let p = embassy_rp::init(Default::default());
     // Wifi prelude
     info!("Hello World!");
 
-    let mut embassy_pico_wifi_core = EmbassyPicoWifiCore::initiate_wifi_prelude(
-        p.PIN_23, p.PIN_24, p.PIN_25, p.PIN_29, p.PIO0, p.DMA_CH0, spawner,
+    let mut embassy_pico_wifi_core = EmbassyPicoWifiCore::connect_to_network(
+        p.PIN_23, p.PIN_24, p.PIN_25, p.PIN_29, p.PIO0, p.DMA_CH0, spawner, environment_variables
     )
     .await;
 
-    let successful_join = embassy_pico_wifi_core
-        .join_wpa2_network(
-            environment_variables.wifi_ssid,
-            environment_variables.wifi_password,
-        )
-        .await;
-    match successful_join {
-        Ok(_) => info!("Successfully joined network"),
-        Err(_) => info!("Failed to join network"),
-    }
 
     // And now we can use it!
     blink_n_times(&mut embassy_pico_wifi_core.control, 1).await;

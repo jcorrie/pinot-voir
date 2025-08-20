@@ -5,6 +5,7 @@ use cyw43::JoinOptions;
 use cyw43_pio::{DEFAULT_CLOCK_DIVIDER, PioSpi};
 use defmt::info;
 use embassy_executor::Spawner;
+use embassy_net::dns::DnsQueryType;
 use embassy_net::{Config, Stack, StackResources};
 use embassy_rp::Peri;
 use embassy_rp::bind_interrupts;
@@ -18,7 +19,6 @@ use reqwless::client::TlsConfig;
 use static_cell::StaticCell;
 
 pub const WEB_TASK_POOL_SIZE: usize = 12;
-
 
 bind_interrupts!(struct Irqs {
     PIO0_IRQ_0 => InterruptHandler<PIO0>;
@@ -179,6 +179,9 @@ impl EmbassyPicoWifiCore {
         self.stack.wait_config_up().await;
 
         info!("Stack is up!");
+
+        info!("Current IPv4 configuration: {}", self.stack.config_v4().unwrap().address);
+
         Ok(())
     }
 
@@ -216,10 +219,21 @@ pub async fn wifi_autoheal_task(
     shared_wifi_core: SharedEmbassyWifiPicoCore,
     env: &'static EnvironmentVariables,
 ) {
-    const RECONNECT_DELAY: Duration = Duration::from_secs(5);
+
+    const RECONNECT_DELAY: Duration = Duration::from_secs(30);
+
     loop {
+        info!("Checking WiFi connection status...");
         let mut wifi_core = shared_wifi_core.0.lock().await;
-        if !wifi_core.stack.is_link_up() {
+
+        // The most reliable way to test active connection is to poll google
+        let ping_google_result = 
+            wifi_core
+                .stack
+                .dns_query("google.com", DnsQueryType::A)
+                .await;
+
+        if ping_google_result.is_err() {
             info!("WiFi link down, attempting reconnection...");
             match wifi_core
                 .join_wpa2_network(env.wifi_ssid, env.wifi_password)

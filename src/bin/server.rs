@@ -38,20 +38,7 @@ impl AppWithStateBuilder for AppProps {
 
     fn build_app(self) -> picoserve::Router<Self::PathRouter, Self::State> {
         picoserve::Router::new()
-            .route("/", get(|| async move { "Hello world." }))
-            .route(
-                "/disconnect",
-                get(|State(app_state): State<AppState>| async move {
-                    info!("Received disconnect");
-                    app_state
-                        .shared_wifi_core
-                        .0
-                        .lock()
-                        .await
-                        .disconnect_from_network()
-                        .await;
-                }),
-            )
+            .route("/", get(|| async move { "Hello world 2." }))
             .route(
                 ("/set_led", parse_path_segment()),
                 get(

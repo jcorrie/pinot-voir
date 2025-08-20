@@ -26,7 +26,7 @@ In [config.toml](.cargo/config.toml) toggle (comment in/out) the relevant runner
 
 To flash, just run `cargo run --bin [binary-name]` (no `--release` flag). You don't need to disconnect/connect each time you want to reflash.
 
-You may need to install `sudo apt install openocd`.
+You may need to install `sudo apt install -y pkg-config libudev-dev cmake git`.
 
 ### DHT22 wiring
 

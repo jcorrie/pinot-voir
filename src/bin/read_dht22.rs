@@ -1,14 +1,14 @@
 #![no_std]
 #![no_main]
 
-use cyw43_pio::{DEFAULT_CLOCK_DIVIDER, PioSpi};
+use cyw43_pio::PioSpi;
 use embassy_dht::dht22::DHT22;
 use embassy_executor::Spawner;
 use embassy_rp::bind_interrupts;
-use embassy_rp::gpio::{Output, Pin};
+use embassy_rp::gpio::Output;
 use embassy_rp::peripherals::{DMA_CH0, PIO0};
 
-use embassy_rp::pio::{InterruptHandler, Pio};
+use embassy_rp::pio::InterruptHandler;
 use embassy_time::{Delay, Duration, Timer};
 use {defmt_rtt as _, panic_probe as _};
 
@@ -22,8 +22,6 @@ async fn cyw43_task(
 ) -> ! {
     runner.run().await
 }
-
-// static SENSOR_PIN: Peri<'static, impl Pin>;
 
 #[embassy_executor::main]
 async fn main(_spawner: Spawner) {

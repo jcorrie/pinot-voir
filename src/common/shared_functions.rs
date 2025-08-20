@@ -26,6 +26,12 @@ pub struct EnvironmentVariables {
     pub supabase_key: &'static str,
 }
 
+impl Default for EnvironmentVariables {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl EnvironmentVariables {
     pub fn new() -> EnvironmentVariables {
         let env_file: &str = include_str!("../../.env");

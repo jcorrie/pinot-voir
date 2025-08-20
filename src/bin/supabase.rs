@@ -66,7 +66,7 @@ async fn main(spawner: Spawner) {
     loop {
         let dht_reading = dht_pin.read().unwrap();
         let (dht_reading_as_string, headers) =
-            construct_post_request_arguments(dht_reading, &environment_variables)
+            construct_post_request_arguments(dht_reading, environment_variables)
                 .expect("Failed to read dht reading");
         let mut request = match http_client
             .request(Method::POST, environment_variables.supabase_url)

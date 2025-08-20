@@ -1,4 +1,3 @@
-use crate::common::shared_functions::{EnvironmentVariables, get_api_key_as_bearer_string};
 use core::fmt::{Error, Write};
 use defmt::info;
 use embassy_dht::Reading;
@@ -12,7 +11,6 @@ pub fn sensor_reading_to_string(reading: Reading<f32, f32>) -> Result<heapless::
     info!("Body string: {}", body_string);
     Ok(body_string)
 }
-
 
 #[derive(Serialize, Deserialize, Clone, Copy)]
 pub struct SensorState {

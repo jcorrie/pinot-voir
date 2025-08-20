@@ -133,10 +133,16 @@ async fn main(spawner: Spawner) {
     info!("Hello World!");
 
     let mut embassy_pico_wifi_core = EmbassyPicoWifiCore::connect_to_network(
-        p.PIN_23, p.PIN_24, p.PIN_25, p.PIN_29, p.PIO0, p.DMA_CH0, spawner, environment_variables
+        p.PIN_23,
+        p.PIN_24,
+        p.PIN_25,
+        p.PIN_29,
+        p.PIO0,
+        p.DMA_CH0,
+        spawner,
+        environment_variables,
     )
     .await;
-
 
     // And now we can use it!
     blink_n_times(&mut embassy_pico_wifi_core.control, 1).await;

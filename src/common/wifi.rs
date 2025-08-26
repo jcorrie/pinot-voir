@@ -242,6 +242,8 @@ pub async fn wifi_autoheal_task(
                 Ok(_) => info!("Rejoined WiFi."),
                 Err(e) => info!("WiFi rejoin failed: status={}", e.status),
             }
+        } else {
+            info!("WiFi is connected");
         }
         Timer::after(RECONNECT_DELAY).await;
     }

@@ -61,6 +61,7 @@ picoserve = { version = "0.16.0", features = ["embassy", "defmt"] }
 embassy-dht = { git = "https://github.com/jcorrie/embassy-dht", branch = "deps", default-features = false, features = ["dht22", "dht11", "dht20", "rp2040"] }
 serde-json-core = "0.6.0"
 serde = { version = "1.0.219", default-features = false, features = ["derive"] }
+embedded-io-async = "0.6.1"
 
 [profile.release]
 debug = 2
@@ -95,6 +96,16 @@ path = "src/bin/server.rs"
 test = false
 doctest = false
 bench = false
+
+
+[[bin]]
+name = "server-tcp"
+path = "src/bin/server-tcp.rs"
+test = false
+doctest = false
+bench = false
+
+
 
 [[bin]]
 name = "server-supabase"

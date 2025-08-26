@@ -194,11 +194,9 @@ async fn read_sensor(
     environment_variables: &'static EnvironmentVariables,
     stack: Stack<'static>,
 ) {
-    info!("A");
     let mut rng = RoscRng;
     let seed = rng.next_u64();
     let mut http_buffers: HttpBuffers = HttpBuffers::new();
-    info!("B");
     let client_state: TcpClientState<1, 1024, 1024> = TcpClientState::<1, 1024, 1024>::new();
 
     let tls_config: TlsConfig<'_> = TlsConfig::new(
@@ -207,11 +205,9 @@ async fn read_sensor(
         &mut http_buffers.tls_write_buffer,
         TlsVerify::None,
     );
-    info!("C");
     let tcp_client = TcpClient::new(stack, &client_state);
     let dns_client = DnsSocket::new(stack);
     let mut http_client = HttpClient::new_with_tls(&tcp_client, &dns_client, tls_config);
-    info!("D");
 
     let delay_loop = Duration::from_secs(60 * 30);
     let blank_reading = Reading {

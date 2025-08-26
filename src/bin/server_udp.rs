@@ -7,14 +7,22 @@
 #![allow(async_fn_in_trait)]
 #![feature(type_alias_impl_trait)]
 #![feature(impl_trait_in_assoc_type)]
+use core::fmt::{Error, Write};
 use core::str::from_utf8;
 use cyw43::Control;
-use defmt::*;
+use defmt::info;
 use embassy_executor::Spawner;
 use embassy_net::udp::{PacketMetadata, UdpMetadata, UdpSocket};
+use embassy_net::{IpAddress, IpEndpoint};
+use embassy_rp::Peri;
+use embassy_rp::adc::{Adc, Channel, Config, InterruptHandler};
+use embassy_rp::bind_interrupts;
+use embassy_rp::gpio::Pull;
+use embassy_rp::peripherals::{ADC, PIN_26};
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, mutex::Mutex};
+use embassy_time::Timer;
 use embassy_time::{Delay, Duration};
-use embedded_io_async::Write;
+use heapless::String;
 use picoserve::extract::Json;
 use picoserve::extract::State;
 use pinot_voir::common::dht22_tools::DHT22;
@@ -108,11 +116,20 @@ async fn web_task(
     .await
 }
 
+bind_interrupts!(
+    /// Binds the ADC interrupts.
+    struct Irqs {
+        ADC_IRQ_FIFO => InterruptHandler;
+    }
+);
+
 #[embassy_executor::task()]
 async fn udp_stream(
     app: &'static AppRouter<AppProps>,
     state: AppState,
     shared_wifi_core: SharedEmbassyWifiPicoCore,
+    pin_26: Peri<'static, PIN_26>,
+    adc: Peri<'static, ADC>,
 ) -> ! {
     let port = 1234;
     let mut rx_buffer = [0; 1024];
@@ -120,6 +137,23 @@ async fn udp_stream(
     let mut rx_meta = [PacketMetadata::EMPTY; 16];
     let mut tx_meta = [PacketMetadata::EMPTY; 16];
     let mut buf = [0; 4096];
+
+    let mut adc = Adc::new(adc, Irqs, Config::default());
+
+    let mut p26 = Channel::new_pin(pin_26, Pull::None);
+
+    let broadcast_addr = IpEndpoint::new(IpAddress::v4(255, 255, 255, 255), port);
+    // loop {
+    //     let level = adc.read(&mut p26).await.unwrap();
+    //     let mut msg: String<32> = String::new();
+    //     write!(msg, "{:.2}", level).unwrap();
+    //     let msg_bytes = msg.as_bytes();
+    //     socket
+    //         .send_to(msg_bytes, broadcast_addr)
+    //         .await
+    //         .expect("Could not send UDP data");
+    //     Timer::after_millis(1).await;
+    // }
 
     loop {
         let mut socket = UdpSocket::new(
@@ -129,8 +163,8 @@ async fn udp_stream(
             &mut tx_meta,
             &mut tx_buffer,
         );
-        socket.bind(port).unwrap();
 
+        socket.bind(port).expect("Could not bind UDP sensor.");
         loop {
             let (n, ep) = socket.recv_from(&mut buf).await.unwrap();
             if let Ok(s) = core::str::from_utf8(&buf[..n]) {
@@ -236,6 +270,8 @@ async fn main(spawner: Spawner) {
                 shared_sensor_state,
             },
             shared_wifi_core,
+            p.PIN_26,
+            p.ADC,
         ))
         .unwrap();
 

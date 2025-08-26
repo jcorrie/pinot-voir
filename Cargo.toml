@@ -106,6 +106,14 @@ doctest = false
 bench = false
 
 
+[[bin]]
+name = "read_mic"
+path = "src/bin/read_mic.rs"
+test = false
+doctest = false
+bench = false
+
+
 
 [[bin]]
 name = "server-supabase"

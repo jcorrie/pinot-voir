@@ -54,6 +54,7 @@ impl EmbassyPicoWifiCore {
         pin_25: Peri<'static, PIN_25>,
         pin_29: Peri<'static, PIN_29>,
         pio_0: Peri<'static, PIO0>,
+        
         dma_ch0: Peri<'static, DMA_CH0>,
         spawner: Spawner,
     ) -> Self {

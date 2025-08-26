@@ -11,7 +11,7 @@ use core::str::from_utf8;
 use cyw43::Control;
 use defmt::*;
 use embassy_executor::Spawner;
-use embassy_net::tcp::TcpSocket;
+use embassy_net::udp::{PacketMetadata, UdpMetadata, UdpSocket};
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, mutex::Mutex};
 use embassy_time::{Delay, Duration};
 use embedded_io_async::Write;
@@ -109,7 +109,7 @@ async fn web_task(
 }
 
 #[embassy_executor::task()]
-async fn audio_stream(
+async fn udp_stream(
     app: &'static AppRouter<AppProps>,
     state: AppState,
     shared_wifi_core: SharedEmbassyWifiPicoCore,
@@ -117,48 +117,26 @@ async fn audio_stream(
     let port = 1234;
     let mut rx_buffer = [0; 1024];
     let mut tx_buffer = [0; 1024];
+    let mut rx_meta = [PacketMetadata::EMPTY; 16];
+    let mut tx_meta = [PacketMetadata::EMPTY; 16];
     let mut buf = [0; 4096];
 
     loop {
-        let mut socket = TcpSocket::new(
+        let mut socket = UdpSocket::new(
             shared_wifi_core.0.lock().await.stack,
+            &mut rx_meta,
             &mut rx_buffer,
+            &mut tx_meta,
             &mut tx_buffer,
         );
-        socket.set_timeout(Some(Duration::from_secs(10)));
-
-        shared_wifi_core.0.gpio_set(0, false).await;
-        info!("Listening on TCP:1234...");
-        if let Err(e) = socket.accept(1234).await {
-            warn!("accept error: {:?}", e);
-            continue;
-        }
-
-        info!("Received connection from {:?}", socket.remote_endpoint());
-        control.gpio_set(0, true).await;
+        socket.bind(port).unwrap();
 
         loop {
-            let n = match socket.read(&mut buf).await {
-                Ok(0) => {
-                    warn!("read EOF");
-                    break;
-                }
-                Ok(n) => n,
-                Err(e) => {
-                    warn!("read error: {:?}", e);
-                    break;
-                }
-            };
-
-            info!("rxd {}", from_utf8(&buf[..n]).unwrap());
-
-            match socket.write_all(&buf[..n]).await {
-                Ok(()) => {}
-                Err(e) => {
-                    warn!("write error: {:?}", e);
-                    break;
-                }
-            };
+            let (n, ep) = socket.recv_from(&mut buf).await.unwrap();
+            if let Ok(s) = core::str::from_utf8(&buf[..n]) {
+                info!("rxd from {}: {}", ep, s);
+            }
+            socket.send_to(&buf[..n], ep).await.unwrap();
         }
     }
 }
@@ -250,10 +228,14 @@ async fn main(spawner: Spawner) {
         .unwrap();
 
     spawner
-        .spawn(audio_stream(
-            shared_wifi_core.0.lock().await.stack,
-            shared_wifi_core.0.lock().await.stack,
-            environment_variables,
+        .spawn(udp_stream(
+            app,
+            AppState {
+                shared_wifi_core,
+                shared_sensor: shared_sensor.clone(),
+                shared_sensor_state,
+            },
+            shared_wifi_core,
         ))
         .unwrap();
 

@@ -99,8 +99,8 @@ bench = false
 
 
 [[bin]]
-name = "server-tcp"
-path = "src/bin/server-tcp.rs"
+name = "server_udp"
+path = "src/bin/server_udp.rs"
 test = false
 doctest = false
 bench = false

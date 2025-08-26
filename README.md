@@ -26,6 +26,8 @@ In [config.toml](.cargo/config.toml) toggle (comment in/out) the relevant runner
 
 To flash, just run `cargo run --bin [binary-name]` (no `--release` flag). You don't need to disconnect/connect each time you want to reflash.
 
+You may need to install `sudo apt install -y pkg-config libudev-dev cmake git`.
+
 ### DHT22 wiring
 
 Courtesy of [adafruit](https://learn.adafruit.com/dht-humidity-sensing-on-raspberry-pi-with-gdocs-logging/wiring), here is an image of how the DHT22 would be wired up. These pins don't correspond exactly to the pico, so just make sure that the pico's ground pin is connected to the ground rail on your breadboard and the 3V pin is connected to the positive rail on your breadboard. Additionally, this repo assumes that the data line out of the DHT22 sensor (blue in the diagram below) is connected to GPIO PIN 16.

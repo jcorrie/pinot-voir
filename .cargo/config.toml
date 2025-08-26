@@ -2,7 +2,7 @@
 [target.'cfg(all(target_arch = "arm", target_os = "none"))']
 runner = "probe-rs run --chip RP2040"
 
-# For release builds note using the debug probe. To flash directly to the chip.
+# For release builds not using the debug probe. To flash directly to the chip.
 # [target.thumbv6m-none-eabi]
 # runner = "elf2uf2-rs -d"
 

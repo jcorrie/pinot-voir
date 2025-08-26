@@ -7,10 +7,14 @@
 #![allow(async_fn_in_trait)]
 #![feature(type_alias_impl_trait)]
 #![feature(impl_trait_in_assoc_type)]
+use core::str::from_utf8;
+use cyw43::Control;
 use defmt::*;
 use embassy_executor::Spawner;
+use embassy_net::tcp::TcpSocket;
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, mutex::Mutex};
 use embassy_time::{Delay, Duration};
+use embedded_io_async::Write;
 use picoserve::extract::Json;
 use picoserve::extract::State;
 use pinot_voir::common::dht22_tools::DHT22;
@@ -104,6 +108,61 @@ async fn web_task(
     .await
 }
 
+#[embassy_executor::task()]
+async fn audio_stream(
+    app: &'static AppRouter<AppProps>,
+    state: AppState,
+    shared_wifi_core: SharedEmbassyWifiPicoCore,
+) -> ! {
+    let port = 1234;
+    let mut rx_buffer = [0; 1024];
+    let mut tx_buffer = [0; 1024];
+    let mut buf = [0; 4096];
+
+    loop {
+        let mut socket = TcpSocket::new(
+            shared_wifi_core.0.lock().await.stack,
+            &mut rx_buffer,
+            &mut tx_buffer,
+        );
+        socket.set_timeout(Some(Duration::from_secs(10)));
+
+        shared_wifi_core.0.gpio_set(0, false).await;
+        info!("Listening on TCP:1234...");
+        if let Err(e) = socket.accept(1234).await {
+            warn!("accept error: {:?}", e);
+            continue;
+        }
+
+        info!("Received connection from {:?}", socket.remote_endpoint());
+        control.gpio_set(0, true).await;
+
+        loop {
+            let n = match socket.read(&mut buf).await {
+                Ok(0) => {
+                    warn!("read EOF");
+                    break;
+                }
+                Ok(n) => n,
+                Err(e) => {
+                    warn!("read error: {:?}", e);
+                    break;
+                }
+            };
+
+            info!("rxd {}", from_utf8(&buf[..n]).unwrap());
+
+            match socket.write_all(&buf[..n]).await {
+                Ok(()) => {}
+                Err(e) => {
+                    warn!("write error: {:?}", e);
+                    break;
+                }
+            };
+        }
+    }
+}
+
 #[derive(Clone, Copy)]
 struct SharedSensor<D: 'static>(&'static Mutex<CriticalSectionRawMutex, DHT22<'static, D>>);
 
@@ -188,6 +247,14 @@ async fn main(spawner: Spawner) {
 
     spawner
         .spawn(wifi_autoheal_task(shared_wifi_core, environment_variables))
+        .unwrap();
+
+    spawner
+        .spawn(audio_stream(
+            shared_wifi_core.0.lock().await.stack,
+            shared_wifi_core.0.lock().await.stack,
+            environment_variables,
+        ))
         .unwrap();
 
     // for some reason, idk why, I can only spawn one less than the pool size

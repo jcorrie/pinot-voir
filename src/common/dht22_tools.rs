@@ -1,8 +1,8 @@
-use crate::common::shared_functions::{get_api_key_as_bearer_string, EnvironmentVariables};
+use crate::common::shared_functions::{EnvironmentVariables, get_api_key_as_bearer_string};
 use core::fmt::{Error, Write};
 use defmt::info;
-pub use embassy_dht::dht22::DHT22;
 use embassy_dht::Reading;
+pub use embassy_dht::dht22::DHT22;
 use heapless::String;
 use picoserve::response::IntoResponse;
 
@@ -10,7 +10,7 @@ pub fn sensor_reading_to_string(reading: Reading<f32, f32>) -> Result<heapless::
     let (temp, humi) = (reading.get_temp(), reading.get_hum());
     // Append static strings
     let mut body_string: heapless::String<32> = String::<32>::new();
-    write!(body_string, "humidity={}&temperature={}", humi, temp)?;
+    write!(body_string, "humidity={humi}&temperature={temp}")?;
     info!("Body string: {}", body_string);
     Ok(body_string)
 }

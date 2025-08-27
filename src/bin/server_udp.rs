@@ -7,6 +7,7 @@
 #![allow(async_fn_in_trait)]
 #![feature(type_alias_impl_trait)]
 #![feature(impl_trait_in_assoc_type)]
+use bytemuck;
 use core::fmt::{Error, Write};
 use core::str::from_utf8;
 use cyw43::Control;
@@ -18,24 +19,23 @@ use embassy_rp::Peri;
 use embassy_rp::adc::{Adc, Channel, Config, InterruptHandler};
 use embassy_rp::bind_interrupts;
 use embassy_rp::gpio::Pull;
-use embassy_rp::peripherals::{ADC, PIN_26};
+use embassy_rp::peripherals::{ADC, DMA_CH1, PIN_26};
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, mutex::Mutex};
 use embassy_time::Timer;
 use embassy_time::{Delay, Duration};
 use heapless::String;
 use picoserve::extract::Json;
 use picoserve::extract::State;
+use picoserve::{
+    AppRouter, AppWithStateBuilder,
+    response::DebugValue,
+    routing::{PathRouter, get, parse_path_segment},
+};
 use pinot_voir::common::dht22_tools::DHT22;
 use pinot_voir::common::sensor_tools::SensorState;
 use pinot_voir::common::shared_functions::{EnvironmentVariables, blink_n_times};
 use pinot_voir::common::wifi::{
     EmbassyPicoWifiCore, SharedEmbassyWifiPicoCore, WEB_TASK_POOL_SIZE, wifi_autoheal_task,
-};
-
-use picoserve::{
-    AppRouter, AppWithStateBuilder,
-    response::DebugValue,
-    routing::{PathRouter, get, parse_path_segment},
 };
 
 use static_cell::make_static;
@@ -130,18 +130,18 @@ async fn udp_stream(
     shared_wifi_core: SharedEmbassyWifiPicoCore,
     pin_26: Peri<'static, PIN_26>,
     adc: Peri<'static, ADC>,
+    dma: Peri<'static, DMA_CH1>,
 ) -> ! {
     let port = 1234;
     let mut rx_buffer = [0; 1024];
     let mut tx_buffer = [0; 1024];
     let mut rx_meta = [PacketMetadata::EMPTY; 16];
     let mut tx_meta = [PacketMetadata::EMPTY; 16];
-    let mut buf = [0; 4096];
 
     let mut adc = Adc::new(adc, Irqs, Config::default());
-
+    let mut dma = dma; // We meed this to be mutable
     let mut p26 = Channel::new_pin(pin_26, Pull::None);
-
+    let sample_frequency_s: u64 = 44100000;
     let broadcast_addr = IpEndpoint::new(IpAddress::v4(255, 255, 255, 255), port);
     // loop {
     //     let level = adc.read(&mut p26).await.unwrap();
@@ -155,23 +155,31 @@ async fn udp_stream(
     //     Timer::after_millis(1).await;
     // }
 
-    loop {
-        let mut socket = UdpSocket::new(
-            shared_wifi_core.0.lock().await.stack,
-            &mut rx_meta,
-            &mut rx_buffer,
-            &mut tx_meta,
-            &mut tx_buffer,
-        );
+    let mut socket = UdpSocket::new(
+        shared_wifi_core.0.lock().await.stack,
+        &mut rx_meta,
+        &mut rx_buffer,
+        &mut tx_meta,
+        &mut tx_buffer,
+    );
+    socket.bind(port).expect("Could not bind UDP sensor.");
 
-        socket.bind(port).expect("Could not bind UDP sensor.");
-        loop {
-            let (n, ep) = socket.recv_from(&mut buf).await.unwrap();
-            if let Ok(s) = core::str::from_utf8(&buf[..n]) {
-                info!("rxd from {}: {}", ep, s);
-            }
-            socket.send_to(&buf[..n], ep).await.unwrap();
-        }
+    let mut sample_buf = [0u16; 128];
+    const BLOCK_SIZE: usize = 100;
+    const NUM_CHANNELS: usize = 1;
+    loop {
+        let mut buf = [0_u16; BLOCK_SIZE];
+        let div = 479; // 100kHz sample rate (48Mhz / 100kHz - 1)
+        // Fill buffer with ADC samples
+        adc.read_many(&mut p26, &mut buf, div, dma.reborrow())
+            .await
+            .unwrap();
+
+        socket
+            .send_to(bytemuck::cast_slice(&buf), broadcast_addr)
+            .await
+            .expect("Could not send UDP audio data");
+        // No delay: send as fast as possible for audio streaming
     }
 }
 
@@ -272,6 +280,7 @@ async fn main(spawner: Spawner) {
             shared_wifi_core,
             p.PIN_26,
             p.ADC,
+            p.DMA_CH1,
         ))
         .unwrap();
 

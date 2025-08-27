@@ -175,11 +175,21 @@ async fn udp_stream(
             .await
             .unwrap();
 
-        socket
+        // Send UDP data
+        match socket
             .send_to(bytemuck::cast_slice(&buf), broadcast_addr)
             .await
-            .expect("Could not send UDP audio data");
-        // No delay: send as fast as possible for audio streaming
+        {
+            Ok(_) => {
+                // Success - add a small delay to prevent overwhelming the network
+                Timer::after_micros(100).await; // 100 microseconds delay
+            }
+            Err(e) => {
+                info!("UDP send error: {:?}", e);
+                // On error, wait a bit longer before retrying
+                Timer::after_millis(1).await;
+            }
+        }
     }
 }
 

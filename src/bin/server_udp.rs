@@ -164,44 +164,37 @@ async fn udp_stream(
     );
     socket.bind(port).expect("Could not bind UDP sensor.");
 
-    const BLOCK_SIZE: usize = 100;
-    let mut consecutive_errors = 0u32;
-    let base_delay_ms = 1u64; // Base delay of 1ms between packets
-
+    const NUM_CHANNELS: usize = 1;
+    const MAX_UDP_PAYLOAD: usize = 1024;
+    const BUFFER_SIZE: usize = 512;
+    const SAMPLE_RATE_HZ: u32 = 44100;
+    const ADC_DIV: u16 = (48_000_000 / SAMPLE_RATE_HZ - 1) as u16;
     loop {
-        let mut buf = [0_u16; BLOCK_SIZE];
-        let div = 479; // 100kHz sample rate (48Mhz / 100kHz - 1)
-
-        // Fill buffer with ADC samples
-        adc.read_many(&mut p26, &mut buf, div, dma.reborrow())
-            .await
-            .unwrap();
-
-        // Send UDP data with adaptive flow control
-        match socket
-            .send_to(bytemuck::cast_slice(&buf), broadcast_addr)
+        let mut audio_buffer = [0_u16; BUFFER_SIZE];
+        match adc
+            .read_many(&mut p26, &mut audio_buffer, ADC_DIV, dma.reborrow())
             .await
         {
             Ok(_) => {
-                // Success - reset error counter and use base delay
-                consecutive_errors = 0;
-                Timer::after_millis(base_delay_ms).await;
+                let audio_bytes = bytemuck::cast_slice(&audio_buffer);
+
+                // Send data in chunks if it's too large for a single UDP packet
+                for chunk in audio_bytes.chunks(MAX_UDP_PAYLOAD) {
+                    match socket.send_to(chunk, broadcast_addr).await {
+                        Ok(_) => {}
+                        Err(e) => {
+                            info!("UDP send error: {:?}", e);
+                            break; // Break inner loop on error
+                        }
+                    }
+
+                    // Small delay between chunks to avoid overwhelming the network
+                    Timer::after_micros(100).await;
+                }
             }
             Err(e) => {
-                consecutive_errors += 1;
-                info!("UDP send error #{}: {:?}", consecutive_errors, e);
-
-                // Exponential backoff on consecutive errors
-                let backoff_delay = base_delay_ms * (1 << consecutive_errors.min(6)); // Max 64ms backoff
-                Timer::after_millis(backoff_delay).await;
-
-                // If we're getting too many consecutive errors, something is wrong
-                if consecutive_errors > 10 {
-                    info!("Too many consecutive UDP errors, resetting connection");
-                    // Could implement socket reset here if needed
-                    consecutive_errors = 0;
-                    Timer::after_millis(1000).await; // Long pause before retrying
-                }
+                info!("ADC read error: {:?}", e);
+                Timer::after_millis(10).await;
             }
         }
     }

@@ -172,8 +172,7 @@ async fn udp_stream(
     // let msg = b"Hello, world!";
     loop {
         // socket.send_to(msg, broadcast_addr).await.unwrap();
-        Timer::after_millis(400).await;
-        let mut audio_buffer = [0_u16; BUFFER_SIZE];
+        let mut audio_buffer: [u16; BUFFER_SIZE] = [0_u16; BUFFER_SIZE];
         match adc
             .read_many(&mut p26, &mut audio_buffer, ADC_DIV, dma.reborrow())
             .await

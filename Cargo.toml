@@ -22,7 +22,7 @@ embassy-rp = { version = "0.7.0", features = [
     "unstable-pac",
     "time-driver",
     "critical-section-impl",
-    "rp2040"   
+    "rp2040",
 ] }
 embassy-net = { version = "0.7.0", features = [
     "defmt",
@@ -32,9 +32,12 @@ embassy-net = { version = "0.7.0", features = [
     "medium-ethernet",
     "dns",
 ] }
-cyw43 = { version = "0.4.0", features = ["defmt", "firmware-logs", "bluetooth"] }
+cyw43 = { version = "0.4.0", features = [
+    "defmt",
+    "firmware-logs",
+    "bluetooth",
+] }
 cyw43-pio = { version = "0.6.0", features = ["defmt"] }
-
 
 
 defmt = "1.0.1"
@@ -58,7 +61,12 @@ portable-atomic = { version = "1.5", features = ["critical-section"] }
 rand = { version = "0.8.5", default-features = false }
 
 picoserve = { version = "0.16.0", features = ["embassy", "defmt"] }
-embassy-dht = { git = "https://github.com/jcorrie/embassy-dht", branch = "deps", default-features = false, features = ["dht22", "dht11", "dht20", "rp2040"] }
+embassy-dht = { git = "https://github.com/jcorrie/embassy-dht", branch = "deps", default-features = false, features = [
+    "dht22",
+    "dht11",
+    "dht20",
+    "rp2040",
+] }
 serde-json-core = "0.6.0"
 serde = { version = "1.0.219", default-features = false, features = ["derive"] }
 embedded-io-async = "0.6.1"
@@ -105,15 +113,6 @@ path = "src/bin/server_udp.rs"
 test = false
 doctest = false
 bench = false
-
-
-[[bin]]
-name = "read_mic"
-path = "src/bin/read_mic.rs"
-test = false
-doctest = false
-bench = false
-
 
 
 [[bin]]

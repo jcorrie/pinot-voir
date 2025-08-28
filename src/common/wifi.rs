@@ -65,10 +65,8 @@ impl EmbassyPicoWifiCore {
 
         match FLASH_NEW_FIRMWARE {
             true => {
-                fw = unsafe { core::slice::from_raw_parts(0x10100000 as *const u8, 231077) };
-                clm = unsafe { core::slice::from_raw_parts(0x10140000 as *const u8, 984) };
-                // fw = include_bytes!("../../cyw43-firmware/43439A0.bin");
-                // clm = include_bytes!("../../cyw43-firmware/43439A0_clm.bin");
+                fw = include_bytes!("../../cyw43-firmware/43439A0.bin");
+                clm = include_bytes!("../../cyw43-firmware/43439A0_clm.bin");
             }
             false => {
                 // To make flashing faster for development, you may want to flash the firmwares independently

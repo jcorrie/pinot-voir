@@ -169,12 +169,9 @@ async fn udp_stream(
     const BUFFER_SIZE: usize = 512;
     const SAMPLE_RATE_HZ: u32 = 44100;
     const ADC_DIV: u16 = (48_000_000 / SAMPLE_RATE_HZ - 1) as u16;
-    let mut buf = [0; 4096];
-    //Add text to buf
-    let n = buf.len();
-    buf[..n].copy_from_slice(b"Hello, world!");
+    let msg = b"Hello, world!";
     loop {
-        socket.send_to(&buf[..n], broadcast_addr).await.unwrap();
+        socket.send_to(msg, broadcast_addr).await.unwrap();
         Timer::after_millis(400).await;
         // let mut audio_buffer = [0_u16; BUFFER_SIZE];
         // match adc

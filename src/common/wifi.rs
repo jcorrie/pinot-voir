@@ -54,7 +54,7 @@ impl EmbassyPicoWifiCore {
         pin_25: Peri<'static, PIN_25>,
         pin_29: Peri<'static, PIN_29>,
         pio_0: Peri<'static, PIO0>,
-        
+
         dma_ch0: Peri<'static, DMA_CH0>,
         spawner: Spawner,
     ) -> Self {
@@ -65,8 +65,10 @@ impl EmbassyPicoWifiCore {
 
         match FLASH_NEW_FIRMWARE {
             true => {
-                fw = include_bytes!("../../cyw43-firmware/43439A0.bin");
-                clm = include_bytes!("../../cyw43-firmware/43439A0_clm.bin");
+                fw = unsafe { core::slice::from_raw_parts(0x10100000 as *const u8, 231077) };
+                clm = unsafe { core::slice::from_raw_parts(0x10140000 as *const u8, 984) };
+                // fw = include_bytes!("../../cyw43-firmware/43439A0.bin");
+                // clm = include_bytes!("../../cyw43-firmware/43439A0_clm.bin");
             }
             false => {
                 // To make flashing faster for development, you may want to flash the firmwares independently
@@ -181,7 +183,10 @@ impl EmbassyPicoWifiCore {
 
         info!("Stack is up!");
 
-        info!("Current IPv4 configuration: {}", self.stack.config_v4().unwrap().address);
+        info!(
+            "Current IPv4 configuration: {}",
+            self.stack.config_v4().unwrap().address
+        );
 
         Ok(())
     }
@@ -220,7 +225,6 @@ pub async fn wifi_autoheal_task(
     shared_wifi_core: SharedEmbassyWifiPicoCore,
     env: &'static EnvironmentVariables,
 ) {
-
     const RECONNECT_DELAY: Duration = Duration::from_secs(30);
 
     loop {
@@ -228,11 +232,10 @@ pub async fn wifi_autoheal_task(
         let mut wifi_core = shared_wifi_core.0.lock().await;
 
         // The most reliable way to test active connection is to poll google
-        let ping_google_result = 
-            wifi_core
-                .stack
-                .dns_query("google.com", DnsQueryType::A)
-                .await;
+        let ping_google_result = wifi_core
+            .stack
+            .dns_query("google.com", DnsQueryType::A)
+            .await;
 
         if ping_google_result.is_err() {
             info!("WiFi link down, attempting reconnection...");

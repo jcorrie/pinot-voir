@@ -169,34 +169,40 @@ async fn udp_stream(
     const BUFFER_SIZE: usize = 512;
     const SAMPLE_RATE_HZ: u32 = 44100;
     const ADC_DIV: u16 = (48_000_000 / SAMPLE_RATE_HZ - 1) as u16;
+    let mut buf = [0; 4096];
+    //Add text to buf
+    let n = buf.len();
+    buf[..n].copy_from_slice(b"Hello, world!");
     loop {
-        let mut audio_buffer = [0_u16; BUFFER_SIZE];
-        match adc
-            .read_many(&mut p26, &mut audio_buffer, ADC_DIV, dma.reborrow())
-            .await
-        {
-            Ok(_) => {
-                let audio_bytes = bytemuck::cast_slice(&audio_buffer);
+        socket.send_to(&buf[..n], broadcast_addr).await.unwrap();
+        Timer::after_millis(400).await;
+        // let mut audio_buffer = [0_u16; BUFFER_SIZE];
+        // match adc
+        //     .read_many(&mut p26, &mut audio_buffer, ADC_DIV, dma.reborrow())
+        //     .await
+        // {
+        //     Ok(_) => {
+        //         let audio_bytes = bytemuck::cast_slice(&audio_buffer);
 
-                // Send data in chunks if it's too large for a single UDP packet
-                for chunk in audio_bytes.chunks(MAX_UDP_PAYLOAD) {
-                    match socket.send_to(chunk, broadcast_addr).await {
-                        Ok(_) => {}
-                        Err(e) => {
-                            info!("UDP send error: {:?}", e);
-                            break; // Break inner loop on error
-                        }
-                    }
+        //         // Send data in chunks if it's too large for a single UDP packet
+        //         for chunk in audio_bytes.chunks(MAX_UDP_PAYLOAD) {
+        //             match socket.send_to(chunk, broadcast_addr).await {
+        //                 Ok(_) => {}
+        //                 Err(e) => {
+        //                     info!("UDP send error: {:?}", e);
+        //                     break; // Break inner loop on error
+        //                 }
+        //             }
 
-                    // Small delay between chunks to avoid overwhelming the network
-                    Timer::after_micros(100).await;
-                }
-            }
-            Err(e) => {
-                info!("ADC read error: {:?}", e);
-                Timer::after_millis(10).await;
-            }
-        }
+        //             // Small delay between chunks to avoid overwhelming the network
+        //             Timer::after_micros(100).await;
+        //         }
+        //     }
+        //     Err(e) => {
+        //         info!("ADC read error: {:?}", e);
+        //         Timer::after_millis(10).await;
+        //     }
+        // }
     }
 }
 

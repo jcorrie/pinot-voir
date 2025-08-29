@@ -141,8 +141,6 @@ async fn udp_stream(
     let mut adc = Adc::new(adc, Irqs, Config::default());
     let mut dma = dma; // We meed this to be mutable
     let mut p26 = Channel::new_pin(pin_26, Pull::None);
-    let sample_frequency_s: u64 = 44100000;
-    let broadcast_addr = IpEndpoint::new(IpAddress::v4(255, 255, 255, 255), port);
     // loop {
     //     let level = adc.read(&mut p26).await.unwrap();
     //     let mut msg: String<32> = String::new();
@@ -155,6 +153,8 @@ async fn udp_stream(
     //     Timer::after_millis(1).await;
     // }
 
+    let sample_frequency_s: u64 = 44100000;
+    let broadcast_addr = IpEndpoint::new(IpAddress::v4(255, 255, 255, 255), port);
     let mut socket = UdpSocket::new(
         shared_wifi_core.0.lock().await.stack,
         &mut rx_meta,

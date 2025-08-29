@@ -10,10 +10,12 @@ use embassy_rp::adc::{Adc, Channel, Config, InterruptHandler as ADCInterruptHand
 use embassy_rp::bind_interrupts;
 use embassy_rp::gpio::Pull;
 use embassy_rp::peripherals::{ADC, DMA_CH0, PIN_26, USB};
+use embassy_rp::uart::Error;
 use embassy_rp::usb::{Driver, InterruptHandler as USBInterruptHandler};
 use embassy_time::Timer;
 use embassy_usb::UsbDevice;
 use embassy_usb::class::cdc_acm::{CdcAcmClass, State};
+use embassy_usb_driver::EndpointError;
 use static_cell::StaticCell;
 use {defmt_rtt as _, panic_probe as _};
 
@@ -23,6 +25,30 @@ bind_interrupts!(struct Irqs {
 bind_interrupts!(struct IrqsADC {
     ADC_IRQ_FIFO => ADCInterruptHandler;
 });
+
+async fn write_cdc_chunked<'a>(
+    cdc: &mut CdcAcmClass<'static, Driver<'static, USB>>,
+    data: &[u8],
+) -> Result<(), EndpointError> {
+    let max_packet_size = 64;
+    let mut offset = 0;
+    while offset < data.len() {
+        let end = (offset + max_packet_size).min(data.len());
+        let chunk = &data[offset..end];
+        // Wait for connection just in case
+        cdc.wait_connection().await;
+        // Try writing
+        match cdc.write_packet(chunk).await {
+            Ok(_) => offset = end,
+            Err(e) => {
+                // Handle or retry error (e.g., BufferOverflow)
+                // Could add delay before retry, or return error to caller
+                return Err(e);
+            }
+        }
+    }
+    Ok(())
+}
 
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
@@ -78,7 +104,7 @@ async fn main(spawner: Spawner) {
                 let audio_bytes: &[u8] = bytemuck::cast_slice(&audio_buffer);
                 info!("{}", &audio_bytes);
                 // Write audio bytes to USB CDC ACM
-                let result = cdc.write_packet(audio_bytes).await;
+                let result = write_cdc_chunked(&mut cdc, audio_bytes).await;
                 match result {
                     Ok(_) => {}
                     Err(e) => {

@@ -74,6 +74,7 @@ bytemuck = "1.23.2"
 embassy-usb-logger = "0.5.1"
 embassy-usb = { version = "0.5.1", features = ["defmt"] }
 log = "0.4.27"
+embassy-usb-driver = "0.2.0"
 
 [profile.release]
 debug = 2

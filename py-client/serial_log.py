@@ -2,7 +2,7 @@ import serial
 import time
 import wave
 
-SERIAL_PORT = "/dev/ttyACM1"
+SERIAL_PORT = "/dev/ttyACM0"
 BAUD_RATE = 115200
 TIMEOUT = 1
 RECORD_SECONDS = 5

@@ -4,6 +4,7 @@
 #![feature(impl_trait_in_assoc_type)]
 
 use bytemuck;
+use defmt::info;
 use embassy_executor::Spawner;
 use embassy_rp::adc::{Adc, Channel, Config, InterruptHandler as ADCInterruptHandler};
 use embassy_rp::bind_interrupts;
@@ -75,7 +76,7 @@ async fn main(spawner: Spawner) {
                 .await
             {
                 let audio_bytes: &[u8] = bytemuck::cast_slice(&audio_buffer);
-
+                info!("{}", &audio_bytes);
                 // Write audio bytes to USB CDC ACM
                 let _ = cdc.write_packet(audio_bytes).await;
             } else {

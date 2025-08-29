@@ -78,7 +78,14 @@ async fn main(spawner: Spawner) {
                 let audio_bytes: &[u8] = bytemuck::cast_slice(&audio_buffer);
                 info!("{}", &audio_bytes);
                 // Write audio bytes to USB CDC ACM
-                let _ = cdc.write_packet(audio_bytes).await;
+                let result = cdc.write_packet(audio_bytes).await;
+                match result {
+                    Ok(_) => {}
+                    Err(e) => {
+                        info!("USB write error: {:?}", e);
+                        break; // If USB write fails, break and wait for next connection
+                    }
+                }
             } else {
                 break; // If ADC fails, break and wait for next connection
             }

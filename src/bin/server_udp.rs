@@ -166,7 +166,7 @@ async fn udp_stream(
 
     const NUM_CHANNELS: usize = 1;
     const MAX_UDP_PAYLOAD: usize = 1024;
-    const BUFFER_SIZE: usize = 512;
+    const BUFFER_SIZE: usize = 1024;
     const SAMPLE_RATE_HZ: u32 = 44100;
     const ADC_DIV: u16 = (48_000_000 / SAMPLE_RATE_HZ - 1) as u16;
     // let msg = b"Hello, world!";

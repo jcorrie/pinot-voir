@@ -20,6 +20,7 @@ start_time = time.time()
 with open(RAW_FILENAME, "wb") as f:
     while time.time() - start_time < RECORD_SECONDS:
         data = ser.read(2048)
+        print(data)
         if data:
             f.write(data)
 

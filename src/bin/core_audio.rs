@@ -63,7 +63,7 @@ impl AudioBlock {
     }
 
     fn centre_samples(&self) -> [i16; AUDIO_BUFFER_SIZE] {
-        self.samples.map(|x| (x as i16) - 10000)
+        self.samples.map(|x| (x as i16) - 4000)
     }
 }
 

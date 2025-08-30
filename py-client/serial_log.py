@@ -1,6 +1,7 @@
 import serial
 import time
 import wave
+import os
 
 SERIAL_PORT = "/dev/ttyACM1"
 BAUD_RATE = 115200
@@ -13,6 +14,9 @@ WAV_FILENAME = "data/audio.wav"
 CHANNELS = 1
 SAMPLE_WIDTH = 2  # bytes (16-bit audio)
 FRAME_RATE = 16000  # Hz
+
+# Ensure the directory exists
+os.makedirs(os.path.dirname(RAW_FILENAME), exist_ok=True)
 
 ser = serial.Serial(SERIAL_PORT, BAUD_RATE, timeout=TIMEOUT)
 

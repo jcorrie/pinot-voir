@@ -115,7 +115,7 @@ async fn main(spawner: Spawner) {
             } else {
                 break; // If ADC fails, break and wait for next connection
             }
-            Timer::after_millis(10).await; // Throttle if needed
+            Timer::after_millis(5).await; // Throttle if needed
         }
     }
 }

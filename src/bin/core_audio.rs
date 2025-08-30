@@ -64,7 +64,7 @@ impl AudioBlock {
 
     fn centre_samples(&mut self) {
         for sample in self.samples.iter_mut() {
-            *sample = ((*sample as i16) - 0) as u16;
+            *sample = ((*sample as i16) - 2048) as u16;
         }
     }
 }

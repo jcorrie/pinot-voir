@@ -3,32 +3,25 @@
 #![feature(type_alias_impl_trait)]
 #![feature(impl_trait_in_assoc_type)]
 
+use bytemuck;
 use defmt::*;
-use embassy_executor::Executor;
+use embassy_executor::{Executor, Spawner};
+use embassy_rp::Peri;
 use embassy_rp::adc::{Adc, Channel, Config, InterruptHandler as ADCInterruptHandler};
+use embassy_rp::bind_interrupts;
 use embassy_rp::gpio::Pull;
 use embassy_rp::multicore::{Stack, spawn_core1};
 use embassy_rp::peripherals::{ADC, CORE1, DMA_CH0, DMA_CH1, PIN_26, USB};
 use embassy_rp::usb::{Driver, InterruptHandler as USBInterruptHandler};
-use embassy_rp::{Peri, bind_interrupts};
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::channel::Channel as SyncChannel;
 use embassy_time::{Instant, Timer};
 use embassy_usb::UsbDevice;
-use embassy_usb::class::cdc_acm::{CdcAcmClass, State};
+use embassy_usb::class::cdc_acm::{CdcAcmClass, State as CdcState};
 use static_cell::StaticCell;
 use {defmt_rtt as _, panic_probe as _};
 
-// Core stacks and executors
-static mut CORE1_STACK: Stack<4096> = Stack::new();
-static EXECUTOR0: StaticCell<Executor> = StaticCell::new();
-static EXECUTOR1: StaticCell<Executor> = StaticCell::new();
-
-// Audio data channel between cores
-const AUDIO_BUFFER_SIZE: usize = 512;
-static AUDIO_CHANNEL: SyncChannel<CriticalSectionRawMutex, AudioBlock, 4> = SyncChannel::new();
-
-// Interrupt bindings
+// ---------- Interrupts ----------
 bind_interrupts!(struct Irqs {
     USBCTRL_IRQ => USBInterruptHandler<USB>;
 });
@@ -36,7 +29,22 @@ bind_interrupts!(struct IrqsADC {
     ADC_IRQ_FIFO => ADCInterruptHandler;
 });
 
-// Audio data block
+// ---------- Executors / Core stacks ----------
+static mut CORE1_STACK: Stack<4096> = Stack::new();
+static EXECUTOR0: StaticCell<Executor> = StaticCell::new();
+static EXECUTOR1: StaticCell<Executor> = StaticCell::new();
+
+// ---------- Audio channel between cores ----------
+const AUDIO_BUFFER_SIZE: usize = 512;
+static AUDIO_CHANNEL: SyncChannel<CriticalSectionRawMutex, AudioBlock, 4> = SyncChannel::new();
+
+// ---------- USB/CDC statics ----------
+static CONFIG_DESCRIPTOR: StaticCell<[u8; 256]> = StaticCell::new();
+static BOS_DESCRIPTOR: StaticCell<[u8; 256]> = StaticCell::new();
+static CONTROL_BUF: StaticCell<[u8; 64]> = StaticCell::new();
+static CDC_STATE: StaticCell<CdcState> = StaticCell::new();
+static CDC_CLASS: StaticCell<CdcAcmClass<'static, Driver<'static, USB>>> = StaticCell::new();
+
 #[derive(Clone, Copy)]
 struct AudioBlock {
     samples: [u16; AUDIO_BUFFER_SIZE],
@@ -58,7 +66,7 @@ impl AudioBlock {
 fn main() -> ! {
     let p = embassy_rp::init(Default::default());
 
-    // Spawn Core 1 for ADC sampling
+    // ---------- Core1: ADC sampling ----------
     spawn_core1(
         p.CORE1,
         unsafe { &mut *core::ptr::addr_of_mut!(CORE1_STACK) },
@@ -70,15 +78,44 @@ fn main() -> ! {
         },
     );
 
-    // Core 0 handles USB
+    // ---------- Core0: USB + CDC ----------
     let executor0 = EXECUTOR0.init(Executor::new());
     executor0.run(|spawner| {
-        unwrap!(spawner.spawn(usb_task(p.USB)));
-        unwrap!(spawner.spawn(usb_transmit_task()));
+        // Build USB device + CDC class
+        let driver = Driver::new(p.USB, Irqs);
+
+        let mut usb_builder = embassy_usb::Builder::new(
+            driver,
+            {
+                let mut cfg = embassy_usb::Config::new(0xc0de, 0xcafe);
+                cfg.manufacturer = Some("Embassy");
+                cfg.product = Some("Dual-Core ADC Stream");
+                cfg.serial_number = Some("12345678");
+                cfg.max_power = 100;
+                cfg.max_packet_size_0 = 64;
+                cfg
+            },
+            CONFIG_DESCRIPTOR.init([0; 256]),
+            BOS_DESCRIPTOR.init([0; 256]),
+            &mut [],
+            CONTROL_BUF.init([0; 64]),
+        );
+
+        let cdc = CDC_CLASS.init(CdcAcmClass::new(
+            &mut usb_builder,
+            CDC_STATE.init(CdcState::new()),
+            64, // max_packet_size for CDC EP
+        ));
+
+        let usb = usb_builder.build();
+
+        // Run USB device + CDC TX task
+        unwrap!(spawner.spawn(usb_device_task(usb)));
+        unwrap!(spawner.spawn(cdc_tx_task(cdc)));
     });
 }
 
-// Core 1 - ADC sampling task
+// ---------- Core1: ADC sampling ----------
 #[embassy_executor::task]
 async fn adc_task(
     adc_peripheral: Peri<'static, ADC>,
@@ -90,15 +127,15 @@ async fn adc_task(
     let mut adc = Adc::new(adc_peripheral, IrqsADC, Config::default());
     let mut p26 = Channel::new_pin(pin, Pull::None);
 
-    const SAMPLE_RATE_HZ: u32 = 8000; // Start conservative
+    const SAMPLE_RATE_HZ: u32 = 8000;
     const ADC_DIV: u16 = (48_000_000 / SAMPLE_RATE_HZ - 1) as u16;
+
     let mut dma = dma;
     let mut block_counter = 0u32;
 
     loop {
         let mut audio_block = AudioBlock::new();
 
-        // Capture samples via DMA
         match adc
             .read_many(&mut p26, &mut audio_block.samples, ADC_DIV, dma.reborrow())
             .await
@@ -106,10 +143,7 @@ async fn adc_task(
             Ok(_) => {
                 block_counter += 1;
                 audio_block.block_id = block_counter;
-                audio_block.timestamp = embassy_time::Instant::now().as_micros();
-
-                // Send to Core 0 for USB transmission
-                // This will block if Core 0 can't keep up, providing natural flow control
+                audio_block.timestamp = Instant::now().as_micros();
                 AUDIO_CHANNEL.send(audio_block).await;
 
                 if block_counter % 100 == 0 {
@@ -124,86 +158,76 @@ async fn adc_task(
     }
 }
 
-// Core 0 - USB device task
+// ---------- Core0: USB device run loop ----------
 #[embassy_executor::task]
-async fn usb_task(usb_peripheral: Peri<'static, USB>) -> ! {
-    info!("USB task starting on Core 0");
-
-    // USB setup
-    static STATE: StaticCell<State> = StaticCell::new();
-    static CONFIG_DESCRIPTOR: StaticCell<[u8; 256]> = StaticCell::new();
-    static BOS_DESCRIPTOR: StaticCell<[u8; 256]> = StaticCell::new();
-    static CONTROL_BUF: StaticCell<[u8; 64]> = StaticCell::new();
-
-    let driver = Driver::new(usb_peripheral, Irqs);
-    let mut usb_builder = embassy_usb::Builder::new(
-        driver,
-        {
-            let mut config = embassy_usb::Config::new(0xc0de, 0xcafe);
-            config.manufacturer = Some("Embassy");
-            config.product = Some("Dual-Core ADC Stream");
-            config.serial_number = Some("12345678");
-            config.max_power = 100;
-            config.max_packet_size_0 = 64;
-            config
-        },
-        CONFIG_DESCRIPTOR.init([0; 256]),
-        BOS_DESCRIPTOR.init([0; 256]),
-        &mut [],
-        CONTROL_BUF.init([0; 64]),
-    );
-
-    let mut usb = usb_builder.build();
+async fn usb_device_task(mut usb: UsbDevice<'static, Driver<'static, USB>>) -> ! {
+    info!("USB device task running");
     usb.run().await
 }
 
-// Core 0 - USB transmission task
+// ---------- Core0: CDC TX task (owns the CDC class) ----------
 #[embassy_executor::task]
-async fn usb_transmit_task() {
-    info!("USB transmit task starting on Core 0");
-
-    // Get CDC class instance (this is simplified - you'd need to properly share this)
-    // In practice, you'd need to structure this differently to share the CDC class
-    Timer::after_millis(1000).await; // Wait for USB to initialize
+async fn cdc_tx_task(cdc: &'static mut CdcAcmClass<'static, Driver<'static, USB>>) {
+    info!("CDC TX task starting");
 
     let mut stats_timer = Instant::now();
-    let mut blocks_transmitted = 0u32;
-    let mut blocks_dropped = 0u32;
+    let mut blocks_ok = 0u32;
+    let mut blocks_err = 0u32;
 
     loop {
-        // Receive audio block from Core 1
-        let audio_block = AUDIO_CHANNEL.receive().await;
+        // Ensure host connected before we start draining
+        cdc.wait_connection().await;
 
-        // Convert to bytes for transmission
-        let audio_bytes = unsafe {
-            core::slice::from_raw_parts(
-                audio_block.samples.as_ptr() as *const u8,
-                audio_block.samples.len() * 2,
-            )
-        };
+        // Drain audio blocks while connected
+        loop {
+            let block = AUDIO_CHANNEL.receive().await;
+            let bytes: &[u8] = bytemuck::cast_slice(&block.samples);
 
-        // Here you would transmit via USB CDC
-        // For now, just simulate processing
-        blocks_transmitted += 1;
-
-        // Print statistics
-        if stats_timer.elapsed().as_secs() >= 2 {
-            let total = blocks_transmitted + blocks_dropped;
-            let success_rate = if total > 0 {
-                (blocks_transmitted as f32 / total as f32) * 100.0
+            if let Err(e) = write_cdc_chunked(cdc, bytes).await {
+                warn!("CDC write error: {:?}", e);
+                blocks_err += 1;
+                // Break to re-sync connection if it dropped / stalled
+                break;
             } else {
-                100.0
-            };
+                blocks_ok += 1;
+            }
 
-            info!(
-                "USB Stats: {} transmitted, {} dropped ({}% success)",
-                blocks_transmitted, blocks_dropped, success_rate
-            );
-
-            stats_timer = Instant::now();
+            if stats_timer.elapsed().as_secs() >= 2 {
+                let total = blocks_ok + blocks_err;
+                let pct = if total == 0 {
+                    100.0
+                } else {
+                    (blocks_ok as f32 / total as f32) * 100.0
+                };
+                info!(
+                    "USB Stats: {} ok, {} err ({}% ok)",
+                    blocks_ok, blocks_err, pct
+                );
+                stats_timer = Instant::now();
+            }
         }
-
-        // Small delay to simulate USB transmission time
-        Timer::after_micros(100).await;
     }
+}
+
+// ---------- Helpers ----------
+async fn write_cdc_chunked(
+    cdc: &mut CdcAcmClass<'static, Driver<'static, USB>>,
+    data: &[u8],
+) -> Result<(), embassy_usb_driver::EndpointError> {
+    // CDC full-speed EPs are typically 64 bytes
+    let max_packet = 64usize;
+    let mut offset = 0usize;
+
+    while offset < data.len() {
+        let end = core::cmp::min(offset + max_packet, data.len());
+        let chunk = &data[offset..end];
+
+        // Ensure host is still connected
+        cdc.wait_connection().await;
+
+        // Write one packet
+        cdc.write_packet(chunk).await?;
+        offset = end;
+    }
+    Ok(())
 }

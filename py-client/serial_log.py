@@ -6,8 +6,8 @@ SERIAL_PORT = "/dev/ttyACM1"
 BAUD_RATE = 115200
 TIMEOUT = 1
 RECORD_SECONDS = 5
-RAW_FILENAME = "audio.raw"
-WAV_FILENAME = "audio.wav"
+RAW_FILENAME = "./data/audio.raw"
+WAV_FILENAME = "./data/audio.wav"
 
 # Audio parameters (adjust as needed)
 CHANNELS = 1

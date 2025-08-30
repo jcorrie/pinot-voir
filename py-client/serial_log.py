@@ -29,7 +29,7 @@ with open(RAW_FILENAME, "wb") as f:
             f.write(data)
 
 ser.close()
-
+print("Recording complete, converting to WAV...")
 # Convert raw to wav
 with open(RAW_FILENAME, "rb") as raw_file:
     raw_data = raw_file.read()
@@ -39,3 +39,5 @@ with wave.open(WAV_FILENAME, "wb") as wav_file:
     wav_file.setsampwidth(SAMPLE_WIDTH)
     wav_file.setframerate(FRAME_RATE)
     wav_file.writeframes(raw_data)
+
+print(f"WAV file saved as {WAV_FILENAME}")

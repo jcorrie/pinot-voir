@@ -1,4 +1,6 @@
-/target
-/.env
-/src/secrets
-/data
+target/
+.env
+src/secrets/
+data/
+__pycache__/
+.venv/

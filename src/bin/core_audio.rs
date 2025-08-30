@@ -187,6 +187,9 @@ async fn cdc_tx_task(cdc: &'static mut CdcAcmClass<'static, Driver<'static, USB>
         loop {
             let block: AudioBlock = AUDIO_CHANNEL.receive().await;
             block.centre_samples();
+            block.centre_samples();
+            block.centre_samples();
+            block.centre_samples();
             let bytes: &[u8] = bytemuck::cast_slice(&block.samples);
 
             if let Err(e) = write_cdc_chunked(cdc, bytes).await {

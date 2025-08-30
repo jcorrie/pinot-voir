@@ -49,6 +49,7 @@ const MAX_USB_BUF: usize = 64;
 #[derive(Clone, Copy)]
 struct AudioBlock {
     samples: [u16; AUDIO_BUFFER_SIZE],
+    samples_centred: Option<[i16; AUDIO_BUFFER_SIZE]>,
     block_id: u32,
     timestamp: u64,
 }
@@ -59,13 +60,16 @@ impl AudioBlock {
             samples: [0; AUDIO_BUFFER_SIZE],
             block_id: 0,
             timestamp: 0,
+            samples_centred: None,
         }
     }
 
     fn centre_samples(&mut self) {
-        for sample in self.samples.iter_mut() {
-            *sample = ((*sample as i16) - 2048) as u16;
+        let mut centred = [0i16; AUDIO_BUFFER_SIZE];
+        for (i, sample) in self.samples.iter().enumerate() {
+            centred[i] = (*sample as i16) - 2048;
         }
+        self.samples_centred = Some(centred);
     }
 }
 
@@ -189,7 +193,8 @@ async fn cdc_tx_task(cdc: &'static mut CdcAcmClass<'static, Driver<'static, USB>
         loop {
             let mut block: AudioBlock = AUDIO_CHANNEL.receive().await;
             block.centre_samples();
-            let bytes: &[u8] = bytemuck::cast_slice(&block.samples);
+            let samples = block.samples_centred.as_ref().unwrap();
+            let bytes: &[u8] = bytemuck::cast_slice(samples);
 
             if let Err(e) = write_cdc_chunked(cdc, bytes).await {
                 warn!("CDC write error: {:?}", e);

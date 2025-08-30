@@ -109,7 +109,7 @@ fn main() -> ! {
         let cdc = CDC_CLASS.init(CdcAcmClass::new(
             &mut usb_builder,
             CDC_STATE.init(CdcState::new()),
-            MAX_USB_BUF as u8, // max_packet_size for CDC EP
+            MAX_USB_BUF as u16, // max_packet_size for CDC EP
         ));
 
         let usb = usb_builder.build();

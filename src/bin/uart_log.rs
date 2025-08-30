@@ -90,7 +90,7 @@ async fn main(spawner: Spawner) {
     let mut p26 = Channel::new_pin(p.PIN_26, Pull::None);
 
     const BUFFER_SIZE: usize = 1024;
-    const SAMPLE_RATE_HZ: u32 = 4000;
+    const SAMPLE_RATE_HZ: u32 = 8000;
     const ADC_DIV: u16 = (48_000_000 / SAMPLE_RATE_HZ - 1) as u16;
 
     loop {

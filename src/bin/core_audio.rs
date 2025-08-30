@@ -193,10 +193,10 @@ async fn cdc_tx_task(cdc: &'static mut CdcAcmClass<'static, Driver<'static, USB>
         // Drain audio blocks while connected
         loop {
             let mut block: AudioBlock = AUDIO_CHANNEL.receive().await;
-            block.centre_samples();
-            let audio_samples = block.samples_centred.as_ref().expect("Failed to get centred samples");
-            info!("{}", audio_samples);
-            let bytes: &[u8] = bytemuck::cast_slice(audio_samples);
+            // block.centre_samples();
+            // let audio_samples = block.samples_centred.as_ref().expect("Failed to get centred samples");
+            // info!("{}", audio_samples);
+            let bytes: &[u8] = bytemuck::cast_slice(&block.samples);
 
             if let Err(e) = write_cdc_chunked(cdc, bytes).await {
                 warn!("CDC write error: {:?}", e);

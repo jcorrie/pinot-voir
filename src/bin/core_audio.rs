@@ -49,7 +49,6 @@ const MAX_USB_BUF: usize = 64;
 #[derive(Clone, Copy)]
 struct AudioBlock {
     samples: [u16; AUDIO_BUFFER_SIZE],
-    samples_centred: Option<[i16; AUDIO_BUFFER_SIZE]>,
     block_id: u32,
     timestamp: u64,
 }
@@ -60,17 +59,11 @@ impl AudioBlock {
             samples: [0; AUDIO_BUFFER_SIZE],
             block_id: 0,
             timestamp: 0,
-            samples_centred: None,
         }
     }
 
-    fn centre_samples(&mut self) {
-        let mut centred = [0i16; AUDIO_BUFFER_SIZE];
-        for (i, sample) in self.samples.iter().enumerate() {
-            centred[i] = (*sample as i16) - 2048;
-        }
-        info!("Centred samples: {:?}", centred);
-        self.samples_centred = Some(centred);
+    fn centre_samples(&self) -> [i16; AUDIO_BUFFER_SIZE] {
+        self.samples.map(|x| (x as i16) - 2048)
     }
 }
 
@@ -116,7 +109,7 @@ fn main() -> ! {
         let cdc = CDC_CLASS.init(CdcAcmClass::new(
             &mut usb_builder,
             CDC_STATE.init(CdcState::new()),
-            MAX_USB_BUF as u16,
+            MAX_USB_BUF as u8, // max_packet_size for CDC EP
         ));
 
         let usb = usb_builder.build();
@@ -192,10 +185,8 @@ async fn cdc_tx_task(cdc: &'static mut CdcAcmClass<'static, Driver<'static, USB>
 
         // Drain audio blocks while connected
         loop {
-            let mut block: AudioBlock = AUDIO_CHANNEL.receive().await;
-            // block.centre_samples();
-            // let audio_samples = block.samples_centred.as_ref().expect("Failed to get centred samples");
-            // info!("{}", audio_samples);
+            let block: AudioBlock = AUDIO_CHANNEL.receive().await;
+            block.centre_samples();
             let bytes: &[u8] = bytemuck::cast_slice(&block.samples);
 
             if let Err(e) = write_cdc_chunked(cdc, bytes).await {

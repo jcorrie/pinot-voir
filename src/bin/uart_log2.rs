@@ -60,6 +60,10 @@ impl AudioBlock {
             timestamp: 0,
         }
     }
+
+    fn centre_samples(&self) -> [i16; AUDIO_BUFFER_SIZE] {
+        self.samples.map(|x| (x as i16) - 2048)
+    }
 }
 
 #[cortex_m_rt::entry]
@@ -180,7 +184,8 @@ async fn cdc_tx_task(cdc: &'static mut CdcAcmClass<'static, Driver<'static, USB>
 
         // Drain audio blocks while connected
         loop {
-            let block = AUDIO_CHANNEL.receive().await;
+            let block: AudioBlock = AUDIO_CHANNEL.receive().await;
+            block.centre_samples();
             let bytes: &[u8] = bytemuck::cast_slice(&block.samples);
 
             if let Err(e) = write_cdc_chunked(cdc, bytes).await {

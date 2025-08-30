@@ -13,7 +13,7 @@ WAV_FILENAME = "data/audio.wav"
 # Audio parameters (adjust as needed)
 CHANNELS = 1
 SAMPLE_WIDTH = 2  # bytes (16-bit audio)
-FRAME_RATE = 16000  # Hz
+FRAME_RATE = 44100  # Hz
 
 # Ensure the directory exists
 os.makedirs(os.path.dirname(RAW_FILENAME), exist_ok=True)

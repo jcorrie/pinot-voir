@@ -127,7 +127,7 @@ async fn adc_task(
     let mut adc = Adc::new(adc_peripheral, IrqsADC, Config::default());
     let mut p26 = Channel::new_pin(pin, Pull::None);
 
-    const SAMPLE_RATE_HZ: u32 = 8000;
+    const SAMPLE_RATE_HZ: u32 = 44100;
     const ADC_DIV: u16 = (48_000_000 / SAMPLE_RATE_HZ - 1) as u16;
 
     let mut dma = dma;

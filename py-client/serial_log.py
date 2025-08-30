@@ -14,7 +14,7 @@ WAV_FILENAME = "data/audio.wav"
 # Audio parameters - must match your Pico settings
 CHANNELS = 1
 SAMPLE_WIDTH = 2  # bytes (16-bit audio)
-FRAME_RATE = 8000  # Hz
+FRAME_RATE = 2000  # Hz
 EXPECTED_CHUNK_SIZE = 1024 * 2  # 1024 samples * 2 bytes per sample
 
 # Calculate expected data rate for validation

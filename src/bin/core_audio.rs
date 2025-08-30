@@ -69,6 +69,7 @@ impl AudioBlock {
         for (i, sample) in self.samples.iter().enumerate() {
             centred[i] = (*sample as i16) - 2048;
         }
+        info!("Centred samples: {:?}", centred);
         self.samples_centred = Some(centred);
     }
 }
@@ -193,7 +194,7 @@ async fn cdc_tx_task(cdc: &'static mut CdcAcmClass<'static, Driver<'static, USB>
         loop {
             let mut block: AudioBlock = AUDIO_CHANNEL.receive().await;
             block.centre_samples();
-            let audio_samples = block.samples_centred.as_ref().unwrap();
+            let audio_samples = block.samples_centred.as_ref().expect("Failed to get centred samples");
             info!("{}", audio_samples);
             let bytes: &[u8] = bytemuck::cast_slice(audio_samples);
 

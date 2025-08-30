@@ -151,8 +151,8 @@ doctest = false
 bench = false
 
 [[bin]]
-name = "uart_log2"
-path = "src/bin/uart_log2.rs"
+name = "core_audio"
+path = "src/bin/core_audio.rs"
 test = false
 doctest = false
 bench = false

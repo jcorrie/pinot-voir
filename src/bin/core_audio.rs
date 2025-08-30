@@ -41,9 +41,10 @@ static AUDIO_CHANNEL: SyncChannel<CriticalSectionRawMutex, AudioBlock, 4> = Sync
 // ---------- USB/CDC statics ----------
 static CONFIG_DESCRIPTOR: StaticCell<[u8; 256]> = StaticCell::new();
 static BOS_DESCRIPTOR: StaticCell<[u8; 256]> = StaticCell::new();
-static CONTROL_BUF: StaticCell<[u8; 64]> = StaticCell::new();
+static CONTROL_BUF: StaticCell<[u8; MAX_USB_BUF]> = StaticCell::new();
 static CDC_STATE: StaticCell<CdcState> = StaticCell::new();
 static CDC_CLASS: StaticCell<CdcAcmClass<'static, Driver<'static, USB>>> = StaticCell::new();
+const MAX_USB_BUF: usize = 64;
 
 #[derive(Clone, Copy)]
 struct AudioBlock {
@@ -96,19 +97,19 @@ fn main() -> ! {
                 cfg.product = Some("Dual-Core ADC Stream");
                 cfg.serial_number = Some("12345678");
                 cfg.max_power = 100;
-                cfg.max_packet_size_0 = 64;
+                cfg.max_packet_size_0 = MAX_USB_BUF as u8;
                 cfg
             },
             CONFIG_DESCRIPTOR.init([0; 256]),
             BOS_DESCRIPTOR.init([0; 256]),
             &mut [],
-            CONTROL_BUF.init([0; 64]),
+            CONTROL_BUF.init([0; MAX_USB_BUF]),
         );
 
         let cdc = CDC_CLASS.init(CdcAcmClass::new(
             &mut usb_builder,
             CDC_STATE.init(CdcState::new()),
-            64, // max_packet_size for CDC EP
+            MAX_USB_BUF as u16,
         ));
 
         let usb = usb_builder.build();

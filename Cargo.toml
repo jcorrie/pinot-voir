@@ -61,7 +61,7 @@ portable-atomic = { version = "1.5", features = ["critical-section"] }
 rand = { version = "0.8.5", default-features = false }
 
 picoserve = { version = "0.16.0", features = ["embassy", "defmt"] }
-embassy-dht = { git = "https://github.com/jcorrie/embassy-dht", branch = "deps", default-features = false, features = [
+embassy-dht = { version = "0.1.9", default-features = false, features = [
     "dht22",
     "dht11",
     "dht20",
@@ -75,6 +75,10 @@ embassy-usb-logger = "0.5.1"
 embassy-usb = { version = "0.5.1", features = ["defmt"] }
 log = "0.4.27"
 embassy-usb-driver = "0.2.0"
+
+[patch.crates-io]
+embassy-dhit = { git = "https://github.com/jcorrie/embassy-dht", branch = "deps" }
+
 
 [profile.release]
 debug = 2
@@ -114,14 +118,6 @@ bench = false
 [[bin]]
 name = "server_udp"
 path = "src/bin/server_udp.rs"
-test = false
-doctest = false
-bench = false
-
-
-[[bin]]
-name = "server-supabase"
-path = "src/bin/server-supabase.rs"
 test = false
 doctest = false
 bench = false

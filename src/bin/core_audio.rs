@@ -34,9 +34,6 @@ static EXECUTOR1: StaticCell<Executor> = StaticCell::new();
 static AUDIO_CHANNEL: SyncChannel<CriticalSectionRawMutex, AudioBlock, 4> = SyncChannel::new();
 
 // ---------- USB/CDC statics ----------
-static CONFIG_DESCRIPTOR: StaticCell<[u8; 256]> = StaticCell::new();
-static BOS_DESCRIPTOR: StaticCell<[u8; 256]> = StaticCell::new();
-static CONTROL_BUF: StaticCell<[u8; MAX_USB_BUF]> = StaticCell::new();
 const MAX_USB_BUF: usize = 64;
 static CDC_STATE: StaticCell<CdcState> = StaticCell::new();
 static CDC_CLASS: StaticCell<CdcAcmClass<'static, Driver<'static, USB>>> = StaticCell::new();

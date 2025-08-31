@@ -9,19 +9,18 @@ use embassy_rp::adc::InterruptHandler as ADCInterruptHandler;
 use embassy_rp::bind_interrupts;
 use embassy_rp::multicore::{Stack, spawn_core1};
 use embassy_rp::peripherals::USB;
+use embassy_rp::time_driver::init;
 use embassy_rp::usb::{Driver, InterruptHandler as USBInterruptHandler};
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::channel::Channel as SyncChannel;
 use embassy_usb::class::cdc_acm::{CdcAcmClass, State as CdcState};
 use pinot_voir::common::adc_microphone::{AudioBlock, adc_task};
-use pinot_voir::common::usb::{cdc_tx_task, usb_device_task};
+use pinot_voir::common::usb::{cdc_tx_task, init_usb, usb_device_task};
 use static_cell::StaticCell;
 use {defmt_rtt as _, panic_probe as _};
 
 // ---------- Interrupts ----------
-bind_interrupts!(struct Irqs {
-    USBCTRL_IRQ => USBInterruptHandler<USB>;
-});
+
 bind_interrupts!(struct IrqsADC {
     ADC_IRQ_FIFO => ADCInterruptHandler;
 });
@@ -38,9 +37,9 @@ static AUDIO_CHANNEL: SyncChannel<CriticalSectionRawMutex, AudioBlock, 4> = Sync
 static CONFIG_DESCRIPTOR: StaticCell<[u8; 256]> = StaticCell::new();
 static BOS_DESCRIPTOR: StaticCell<[u8; 256]> = StaticCell::new();
 static CONTROL_BUF: StaticCell<[u8; MAX_USB_BUF]> = StaticCell::new();
+const MAX_USB_BUF: usize = 64;
 static CDC_STATE: StaticCell<CdcState> = StaticCell::new();
 static CDC_CLASS: StaticCell<CdcAcmClass<'static, Driver<'static, USB>>> = StaticCell::new();
-const MAX_USB_BUF: usize = 64;
 
 #[cortex_m_rt::entry]
 fn main() -> ! {
@@ -61,24 +60,7 @@ fn main() -> ! {
     // ---------- Core0: USB + CDC ----------
     let executor0 = EXECUTOR0.init(Executor::new());
     executor0.run(|spawner| {
-        let driver = Driver::new(p.USB, Irqs);
-
-        let mut usb_builder = embassy_usb::Builder::new(
-            driver,
-            {
-                let mut cfg = embassy_usb::Config::new(0xc0de, 0xcafe);
-                cfg.manufacturer = Some("Embassy");
-                cfg.product = Some("Dual-Core ADC Stream");
-                cfg.serial_number = Some("12345678");
-                cfg.max_power = 100;
-                cfg.max_packet_size_0 = MAX_USB_BUF as u8;
-                cfg
-            },
-            CONFIG_DESCRIPTOR.init([0; 256]),
-            BOS_DESCRIPTOR.init([0; 256]),
-            &mut [],
-            CONTROL_BUF.init([0; MAX_USB_BUF]),
-        );
+        let mut usb_builder = init_usb(p.USB);
 
         let cdc = CDC_CLASS.init(CdcAcmClass::new(
             &mut usb_builder,

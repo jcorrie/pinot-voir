@@ -1,19 +1,12 @@
-use bytemuck;
 use defmt::*;
-use embassy_executor::{Executor, Spawner};
 use embassy_rp::Peri;
 use embassy_rp::adc::{Adc, Channel, Config, InterruptHandler as ADCInterruptHandler};
 use embassy_rp::bind_interrupts;
 use embassy_rp::gpio::Pull;
-use embassy_rp::multicore::{Stack, spawn_core1};
-use embassy_rp::peripherals::{ADC, CORE1, DMA_CH0, DMA_CH1, PIN_26, USB};
-use embassy_rp::usb::{Driver, InterruptHandler as USBInterruptHandler};
+use embassy_rp::peripherals::{ADC, DMA_CH0, PIN_26};
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::channel::Channel as SyncChannel;
 use embassy_time::{Instant, Timer};
-use embassy_usb::UsbDevice;
-use embassy_usb::class::cdc_acm::{CdcAcmClass, State as CdcState};
-use static_cell::StaticCell;
 use {defmt_rtt as _, panic_probe as _};
 
 const AUDIO_BUFFER_SIZE: usize = 512;
@@ -23,6 +16,12 @@ pub struct AudioBlock {
     pub samples: [u16; AUDIO_BUFFER_SIZE],
     pub block_id: u32,
     pub timestamp: u64,
+}
+
+impl Default for AudioBlock {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl AudioBlock {
@@ -75,7 +74,7 @@ pub async fn adc_task(
                 audio_block.timestamp = Instant::now().as_micros();
                 audio_channel.send(audio_block).await;
 
-                if block_counter % 100 == 0 {
+                if block_counter.is_multiple_of(100) {
                     info!("ADC: Captured block {}", block_counter);
                 }
             }

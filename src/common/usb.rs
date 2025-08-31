@@ -1,10 +1,10 @@
 use crate::common::adc_microphone::AudioBlock;
 use defmt::*;
 use embassy_rp::peripherals::USB;
-use embassy_rp::usb::{Driver, InterruptHandler as USBInterruptHandler};
+use embassy_rp::usb::Driver;
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::channel::Channel as SyncChannel;
-use embassy_time::{Instant, Timer};
+use embassy_time::Instant;
 use embassy_usb::UsbDevice;
 use embassy_usb::class::cdc_acm::CdcAcmClass;
 // ---------- Helpers ----------
@@ -33,6 +33,7 @@ pub async fn write_cdc_chunked(
 // ---------- Core0: USB device run loop ----------
 #[embassy_executor::task]
 pub async fn usb_device_task(mut usb: UsbDevice<'static, Driver<'static, USB>>) -> ! {
+
     info!("USB device task running");
     usb.run().await
 }

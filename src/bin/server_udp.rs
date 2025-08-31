@@ -7,13 +7,9 @@
 #![allow(async_fn_in_trait)]
 #![feature(type_alias_impl_trait)]
 #![feature(impl_trait_in_assoc_type)]
-use bytemuck;
-use core::fmt::{Error, Write};
-use core::str::from_utf8;
-use cyw43::Control;
 use defmt::info;
 use embassy_executor::Spawner;
-use embassy_net::udp::{PacketMetadata, UdpMetadata, UdpSocket};
+use embassy_net::udp::{PacketMetadata, UdpSocket};
 use embassy_net::{IpAddress, IpEndpoint};
 use embassy_rp::Peri;
 use embassy_rp::adc::{Adc, Channel, Config, InterruptHandler};
@@ -23,7 +19,6 @@ use embassy_rp::peripherals::{ADC, DMA_CH1, PIN_26};
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, mutex::Mutex};
 use embassy_time::Timer;
 use embassy_time::{Delay, Duration};
-use heapless::String;
 use picoserve::extract::Json;
 use picoserve::extract::State;
 use picoserve::{

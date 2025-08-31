@@ -3,23 +3,18 @@
 #![feature(type_alias_impl_trait)]
 #![feature(impl_trait_in_assoc_type)]
 
-use bytemuck;
 use defmt::*;
-use embassy_executor::{Executor, Spawner};
-use embassy_rp::Peri;
-use embassy_rp::adc::{Adc, Channel, Config, InterruptHandler as ADCInterruptHandler};
+use embassy_executor::Executor;
+use embassy_rp::adc::InterruptHandler as ADCInterruptHandler;
 use embassy_rp::bind_interrupts;
-use embassy_rp::gpio::Pull;
 use embassy_rp::multicore::{Stack, spawn_core1};
-use embassy_rp::peripherals::{ADC, CORE1, DMA_CH0, DMA_CH1, PIN_26, USB};
+use embassy_rp::peripherals::USB;
 use embassy_rp::usb::{Driver, InterruptHandler as USBInterruptHandler};
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::channel::Channel as SyncChannel;
-use embassy_time::{Instant, Timer};
-use embassy_usb::UsbDevice;
 use embassy_usb::class::cdc_acm::{CdcAcmClass, State as CdcState};
 use pinot_voir::common::adc_microphone::{AudioBlock, adc_task};
-use pinot_voir::common::usb::{cdc_tx_task, usb_device_task, write_cdc_chunked};
+use pinot_voir::common::usb::{cdc_tx_task, usb_device_task};
 use static_cell::StaticCell;
 use {defmt_rtt as _, panic_probe as _};
 
@@ -66,7 +61,6 @@ fn main() -> ! {
     // ---------- Core0: USB + CDC ----------
     let executor0 = EXECUTOR0.init(Executor::new());
     executor0.run(|spawner| {
-        // Build USB device + CDC class
         let driver = Driver::new(p.USB, Irqs);
 
         let mut usb_builder = embassy_usb::Builder::new(

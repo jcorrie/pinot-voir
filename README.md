@@ -14,6 +14,7 @@ This repo also serves as a starting point for building other web-enabled project
 
 * As you will see from [rust-toolchain.toml](/rust-toolchain.toml), we use a nightly build. Additionally, you will be building binaries for a non-native target, so run `rustup target add thumbv6m-none-eabi`.
 * Holding down the bootsel button, connect your pico via USB to your machine. The pico should be registered as a new storage device on your machine (similar to plugging in a USB thumb drive).
+* Install `cargo install elf2uf2-rs`
 * You can build a binary using `cargo build` or `cargo build --release` in the usual way.
 * To flash your binary to the pico (assuming no debug probe) use `cargo run --bin [binary-name] --release`. Cargo will follow instructions in [config.toml](.cargo/config.toml) and transfer the binary onto your pico using the selected runner.
 * To re-flash, you will need to disconnect the pico and reconnect it holding down the bootsel button.

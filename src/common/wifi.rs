@@ -7,10 +7,10 @@ use defmt::info;
 use embassy_executor::Spawner;
 use embassy_net::dns::DnsQueryType;
 use embassy_net::{Config, Stack, StackResources};
-use embassy_rp::Peri;
 use embassy_rp::bind_interrupts;
 use embassy_rp::clocks::RoscRng;
 use embassy_rp::gpio::{Level, Output};
+use embassy_rp::Peri;
 use embassy_rp::peripherals::{DMA_CH0, PIN_23, PIN_24, PIN_25, PIN_29, PIO0};
 use embassy_rp::pio::{InterruptHandler, Pio};
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, mutex::Mutex};
@@ -54,6 +54,7 @@ impl EmbassyPicoWifiCore {
         pin_25: Peri<'static, PIN_25>,
         pin_29: Peri<'static, PIN_29>,
         pio_0: Peri<'static, PIO0>,
+
         dma_ch0: Peri<'static, DMA_CH0>,
         spawner: Spawner,
     ) -> Self {
@@ -180,7 +181,10 @@ impl EmbassyPicoWifiCore {
 
         info!("Stack is up!");
 
-        info!("Current IPv4 configuration: {}", self.stack.config_v4().unwrap().address);
+        info!(
+            "Current IPv4 configuration: {}",
+            self.stack.config_v4().unwrap().address
+        );
 
         Ok(())
     }
@@ -219,7 +223,6 @@ pub async fn wifi_autoheal_task(
     shared_wifi_core: SharedEmbassyWifiPicoCore,
     env: &'static EnvironmentVariables,
 ) {
-
     const RECONNECT_DELAY: Duration = Duration::from_secs(30);
 
     loop {
@@ -227,11 +230,10 @@ pub async fn wifi_autoheal_task(
         let mut wifi_core = shared_wifi_core.0.lock().await;
 
         // The most reliable way to test active connection is to poll google
-        let ping_google_result = 
-            wifi_core
-                .stack
-                .dns_query("google.com", DnsQueryType::A)
-                .await;
+        let ping_google_result = wifi_core
+            .stack
+            .dns_query("google.com", DnsQueryType::A)
+            .await;
 
         if ping_google_result.is_err() {
             info!("WiFi link down, attempting reconnection...");

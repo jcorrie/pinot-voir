@@ -4,7 +4,6 @@ use defmt::info;
 use embassy_dht::Reading;
 pub use embassy_dht::dht22::DHT22;
 use heapless::String;
-use picoserve::response::IntoResponse;
 
 pub fn sensor_reading_to_string(reading: Reading<f32, f32>) -> Result<heapless::String<32>, Error> {
     let (temp, humi) = (reading.get_temp(), reading.get_hum());
@@ -24,27 +23,4 @@ pub fn ping_supabase_endpoint(environment_variables: &EnvironmentVariables) {
         ("Authorization", bearer_token.as_str()),
     ];
     info!("Pinging Supabase endpoint");
-}
-
-pub struct DHT22ReadingResponse<T: core::fmt::Display> {
-    pub temperature: T,
-    pub humidity: T,
-}
-
-impl<T: core::fmt::Display> IntoResponse for DHT22ReadingResponse<T> {
-    async fn write_to<
-        R: picoserve::io::Read,
-        W: picoserve::response::ResponseWriter<Error = R::Error>,
-    >(
-        self,
-        connection: picoserve::response::Connection<'_, R>,
-        response_writer: W,
-    ) -> Result<picoserve::ResponseSent, W::Error> {
-        format_args!(
-            "{{\"temperature\":{},\"humidity\":{}}}",
-            self.temperature, self.humidity
-        )
-        .write_to(connection, response_writer)
-        .await
-    }
 }

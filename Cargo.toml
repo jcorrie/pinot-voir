@@ -77,7 +77,7 @@ log = "0.4.27"
 embassy-usb-driver = "0.2.0"
 
 [patch.crates-io]
-embassy-dhit = { git = "https://github.com/jcorrie/embassy-dht", branch = "deps" }
+embassy-dht = { git = "https://github.com/jcorrie/embassy-dht", branch = "deps" }
 
 
 [profile.release]

@@ -9,3 +9,5 @@ pub mod wifi;
 pub mod supabase;
 
 pub mod adc_microphone;
+
+pub mod usb;

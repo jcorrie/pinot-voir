@@ -5,5 +5,7 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "numpy>=2.3.2",
     "pyserial>=3.5",
+    "sounddevice>=0.5.2",
 ]

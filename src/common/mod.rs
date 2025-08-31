@@ -7,3 +7,5 @@ pub mod sensor_tools;
 pub mod wifi;
 
 pub mod supabase;
+
+pub mod adc_microphone;

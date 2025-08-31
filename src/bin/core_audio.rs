@@ -18,6 +18,7 @@ use embassy_sync::channel::Channel as SyncChannel;
 use embassy_time::{Instant, Timer};
 use embassy_usb::UsbDevice;
 use embassy_usb::class::cdc_acm::{CdcAcmClass, State as CdcState};
+use pinot_voir::common::adc_microphone::AudioBlock;
 use static_cell::StaticCell;
 use {defmt_rtt as _, panic_probe as _};
 
@@ -35,7 +36,6 @@ static EXECUTOR0: StaticCell<Executor> = StaticCell::new();
 static EXECUTOR1: StaticCell<Executor> = StaticCell::new();
 
 // ---------- Audio channel between cores ----------
-const AUDIO_BUFFER_SIZE: usize = 512;
 static AUDIO_CHANNEL: SyncChannel<CriticalSectionRawMutex, AudioBlock, 4> = SyncChannel::new();
 
 // ---------- USB/CDC statics ----------
@@ -45,27 +45,6 @@ static CONTROL_BUF: StaticCell<[u8; MAX_USB_BUF]> = StaticCell::new();
 static CDC_STATE: StaticCell<CdcState> = StaticCell::new();
 static CDC_CLASS: StaticCell<CdcAcmClass<'static, Driver<'static, USB>>> = StaticCell::new();
 const MAX_USB_BUF: usize = 64;
-
-#[derive(Clone, Copy)]
-struct AudioBlock {
-    samples: [u16; AUDIO_BUFFER_SIZE],
-    block_id: u32,
-    timestamp: u64,
-}
-
-impl AudioBlock {
-    fn new() -> Self {
-        Self {
-            samples: [0; AUDIO_BUFFER_SIZE],
-            block_id: 0,
-            timestamp: 0,
-        }
-    }
-
-    fn centre_samples(&self) -> [i16; AUDIO_BUFFER_SIZE] {
-        self.samples.map(|x| (x as i16) - 2048)
-    }
-}
 
 #[cortex_m_rt::entry]
 fn main() -> ! {

@@ -16,7 +16,7 @@ def is_audio_data(data):
         return False
     try:
         samples = struct.unpack(f"<{len(data) // 2}h", data)
-        if all(-2048 <= sample <= 2047 for sample in samples):
+        if all(-32768 <= sample <= 32767 for sample in samples):
             return True
     except struct.error:
         pass

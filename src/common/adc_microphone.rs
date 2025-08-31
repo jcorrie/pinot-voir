@@ -3,7 +3,7 @@ use embassy_rp::Peri;
 use embassy_rp::adc::{Adc, Channel, Config, InterruptHandler as ADCInterruptHandler};
 use embassy_rp::bind_interrupts;
 use embassy_rp::gpio::Pull;
-use embassy_rp::peripherals::{ADC, DMA_CH0, PIN_26};
+use embassy_rp::peripherals::{ADC, DMA_CH1, PIN_26};
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::channel::Channel as SyncChannel;
 use embassy_time::{Instant, Timer};
@@ -34,7 +34,10 @@ impl AudioBlock {
     }
 
     pub fn centre_samples(&self) -> [i16; AUDIO_BUFFER_SIZE] {
-        self.samples.map(|x| (x as i16) - 2048)
+        self.samples.map(|x| {
+            let centered = (x as i32) - 2048; // widen first, -2048..+2047
+            (centered * 16) as i16 // scale into ~-32768..+32752
+        })
     }
 }
 
@@ -47,7 +50,7 @@ bind_interrupts!(struct IrqsADC {
 pub async fn adc_task(
     audio_channel: &'static SyncChannel<CriticalSectionRawMutex, AudioBlock, 4>,
     adc_peripheral: Peri<'static, ADC>,
-    dma: Peri<'static, DMA_CH0>,
+    dma: Peri<'static, DMA_CH1>,
     pin: Peri<'static, PIN_26>,
 ) {
     info!("ADC task starting on Core 1");

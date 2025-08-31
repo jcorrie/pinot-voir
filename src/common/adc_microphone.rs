@@ -9,7 +9,7 @@ use embassy_sync::channel::Channel as SyncChannel;
 use embassy_time::{Instant, Timer};
 use {defmt_rtt as _, panic_probe as _};
 
-const AUDIO_BUFFER_SIZE: usize = 512;
+pub const AUDIO_BUFFER_SIZE: usize = 512;
 
 #[derive(Clone, Copy)]
 pub struct AudioBlock {

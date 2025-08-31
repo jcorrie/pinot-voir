@@ -10,17 +10,17 @@ use embassy_net::udp::{PacketMetadata, UdpSocket};
 use embassy_net::{IpAddress, IpEndpoint};
 use embassy_rp::adc::InterruptHandler as ADCInterruptHandler;
 use embassy_rp::bind_interrupts;
-use embassy_rp::multicore::{Stack, spawn_core1};
+use embassy_rp::multicore::{spawn_core1, Stack};
 use embassy_rp::peripherals::{ADC, DMA_CH0, PIN_26};
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::channel::Channel as SyncChannel;
 use embassy_sync::mutex::Mutex;
 use embassy_time::{Duration, Instant, Timer};
-use pinot_voir::common::adc_microphone::{AudioBlock, adc_task};
+use pinot_voir::common::adc_microphone::{adc_task, AudioBlock, AUDIO_BUFFER_SIZE};
 use pinot_voir::common::shared_functions::EnvironmentVariables;
 use pinot_voir::common::wifi::{EmbassyPicoWifiCore, SharedEmbassyWifiPicoCore};
-use static_cell::StaticCell;
 use static_cell::make_static;
+use static_cell::StaticCell;
 use {defmt_rtt as _, panic_probe as _};
 
 // ---------- Executors / Core stacks ----------
@@ -77,7 +77,7 @@ async fn main(spawner: Spawner) {
     )));
 }
 
-/// Task running on Core0: reads AudioBlocks and sends via UDP
+/// Task running on Core0: reads AudioBlocks and sends via UDP with proper rate limiting
 #[embassy_executor::task]
 async fn udp_tx_task(
     audio_channel: &'static SyncChannel<CriticalSectionRawMutex, AudioBlock, 4>,
@@ -100,28 +100,59 @@ async fn udp_tx_task(
     );
     socket.bind(port).expect("UDP bind failed");
 
-    const MAX_UDP_PAYLOAD: usize = 1024;
     let mut stats_timer = Instant::now();
     let mut blocks_ok = 0u32;
     let mut blocks_err = 0u32;
+    
+    // Calculate the exact timing for each audio block
+    // 512 samples at 44100 Hz = 11.61ms per block
+    const SAMPLE_RATE_HZ: u32 = 44100;
+    const BLOCK_DURATION_MICROS: u64 = (AUDIO_BUFFER_SIZE as u64 * 1_000_000) / SAMPLE_RATE_HZ as u64;
+    
+    info!("UDP task: Block duration = {} microseconds", BLOCK_DURATION_MICROS);
 
     loop {
-        let block: AudioBlock = audio_channel.receive().await;
+        let send_start = Instant::now();
+        
+        // Get the latest block, dropping any that have queued up
+        let mut block: AudioBlock = audio_channel.receive().await;
+        let mut dropped_count = 0;
+        
+        // Drop excess blocks to maintain real-time performance
+        while let Ok(newer_block) = audio_channel.try_receive() {
+            block = newer_block;
+            dropped_count += 1;
+        }
+        
+        if dropped_count > 0 {
+            info!("Dropped {} audio blocks to maintain real-time", dropped_count);
+        }
+        
         let samples = block.centre_samples();
         let bytes: &[u8] = bytemuck::cast_slice(&samples);
 
-        // Send in chunks
-        for chunk in bytes.chunks(MAX_UDP_PAYLOAD) {
-            match socket.send_to(chunk, endpoint).await {
-                Ok(_) => blocks_ok += 1,
-                Err(e) => {
-                    blocks_err += 1;
-                    info!("UDP send error: {:?}", e);
-                }
+        // Send the audio block
+        match socket.send_to(bytes, endpoint).await {
+            Ok(_) => blocks_ok += 1,
+            Err(e) => {
+                blocks_err += 1;
+                info!("UDP send error: {:?}", e);
             }
-            Timer::after_micros(100).await;
         }
 
+        // Calculate how long we spent processing and sending
+        let processing_time = send_start.elapsed();
+        
+        // Wait for the remainder of the block period
+        if processing_time.as_micros() < BLOCK_DURATION_MICROS {
+            let wait_time = BLOCK_DURATION_MICROS - processing_time.as_micros();
+            Timer::after_micros(wait_time).await;
+        } else {
+            // If processing took longer than expected, log a warning but don't wait
+            info!("Processing took {}μs, expected {}μs", processing_time.as_micros(), BLOCK_DURATION_MICROS);
+        }
+
+        // Stats reporting
         if stats_timer.elapsed() >= Duration::from_secs(2) {
             let total = blocks_ok + blocks_err;
             let pct = if total == 0 {
@@ -130,11 +161,11 @@ async fn udp_tx_task(
                 (blocks_ok as f32 / total as f32) * 100.0
             };
             info!(
-                "UDP Stats: {} ok, {} err ({}% ok), sample preview: {}",
+                "UDP Stats: {} ok, {} err ({}% ok), last processing time: {}μs", 
                 blocks_ok,
                 blocks_err,
                 pct,
-                &bytes[..core::cmp::min(16, bytes.len())]
+                processing_time.as_micros()
             );
             stats_timer = Instant::now();
         }

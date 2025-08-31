@@ -537,10 +537,10 @@ dependencies = [
 [[package]]
 name = "embassy-dht"
 version = "0.1.9"
-source = "git+https://github.com/sndnvaps/embassy-dht?branch=main#680a0914ddcaf6df30d2ce69310ac49bc3209cbd"
+source = "git+https://github.com/jcorrie/embassy-dht?branch=dhtsensor-trait#0af166c48466e06c3bd0e9ef3c34f13d2fbe0e0c"
 dependencies = [
  "embassy-rp",
- "embassy-time 0.4.0",
+ "embassy-time 0.5.0",
  "embassy-time-driver",
  "embedded-hal 1.0.0",
  "num-traits",
@@ -1608,7 +1608,7 @@ dependencies = [
  "embassy-net",
  "embassy-rp",
  "embassy-sync",
- "embassy-time 0.4.0",
+ "embassy-time 0.5.0",
  "embassy-usb",
  "embassy-usb-driver",
  "embassy-usb-logger",

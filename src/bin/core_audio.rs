@@ -19,7 +19,7 @@ use embassy_time::{Instant, Timer};
 use embassy_usb::UsbDevice;
 use embassy_usb::class::cdc_acm::{CdcAcmClass, State as CdcState};
 use pinot_voir::common::adc_microphone::{AudioBlock, adc_task};
-use pinot_voir::common::usb::write_cdc_chunked;
+use pinot_voir::common::usb::{write_cdc_chunked, usb_device_task};
 use static_cell::StaticCell;
 use {defmt_rtt as _, panic_probe as _};
 
@@ -100,12 +100,6 @@ fn main() -> ! {
     });
 }
 
-// ---------- Core0: USB device run loop ----------
-#[embassy_executor::task]
-async fn usb_device_task(mut usb: UsbDevice<'static, Driver<'static, USB>>) -> ! {
-    info!("USB device task running");
-    usb.run().await
-}
 
 // ---------- Core0: CDC TX task (owns the CDC class) ----------
 #[embassy_executor::task]

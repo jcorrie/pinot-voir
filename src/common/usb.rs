@@ -1,6 +1,8 @@
+use defmt::*;
 use embassy_rp::peripherals::USB;
 use embassy_rp::usb::{Driver, InterruptHandler as USBInterruptHandler};
-use embassy_usb::class::cdc_acm::{CdcAcmClass};
+use embassy_usb::UsbDevice;
+use embassy_usb::class::cdc_acm::CdcAcmClass;
 // ---------- Helpers ----------
 pub async fn write_cdc_chunked(
     cdc: &mut CdcAcmClass<'static, Driver<'static, USB>>,
@@ -22,4 +24,11 @@ pub async fn write_cdc_chunked(
         offset = end;
     }
     Ok(())
+}
+
+// ---------- Core0: USB device run loop ----------
+#[embassy_executor::task]
+pub async fn usb_device_task(mut usb: UsbDevice<'static, Driver<'static, USB>>) -> ! {
+    info!("USB device task running");
+    usb.run().await
 }

@@ -1,3 +1,4 @@
+use crate::common::adc_microphone::AudioBlock;
 use defmt::*;
 use embassy_rp::peripherals::USB;
 use embassy_rp::usb::{Driver, InterruptHandler as USBInterruptHandler};
@@ -6,7 +7,6 @@ use embassy_sync::channel::Channel as SyncChannel;
 use embassy_time::{Instant, Timer};
 use embassy_usb::UsbDevice;
 use embassy_usb::class::cdc_acm::CdcAcmClass;
-use crate::common::adc_microphone::AudioBlock;
 // ---------- Helpers ----------
 pub async fn write_cdc_chunked(
     cdc: &mut CdcAcmClass<'static, Driver<'static, USB>>,

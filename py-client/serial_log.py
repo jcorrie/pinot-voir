@@ -35,7 +35,7 @@ def is_audio_data(data):
         samples = struct.unpack(f"<{len(data) // 2}H", data)
         # ADC on Pico gives 12-bit values (0-4095), stored in 16-bit
         # Reasonable range check
-        if all(0 <= sample <= 4095 for sample in samples):
+        if all(-2048 <= sample <= 2047 for sample in samples):
             return True
     except struct.error:
         pass

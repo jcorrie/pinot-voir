@@ -18,7 +18,7 @@ use embassy_sync::channel::Channel as SyncChannel;
 use embassy_time::{Instant, Timer};
 use embassy_usb::UsbDevice;
 use embassy_usb::class::cdc_acm::{CdcAcmClass, State as CdcState};
-use pinot_voir::common::adc_microphone::AudioBlock;
+use pinot_voir::common::adc_microphone::{AudioBlock, adc_task};
 use pinot_voir::common::usb::write_cdc_chunked;
 use static_cell::StaticCell;
 use {defmt_rtt as _, panic_probe as _};
@@ -58,7 +58,7 @@ fn main() -> ! {
         move || {
             let executor1 = EXECUTOR1.init(Executor::new());
             executor1.run(|spawner| {
-                unwrap!(spawner.spawn(adc_task(p.ADC, p.DMA_CH0, p.PIN_26)));
+                unwrap!(spawner.spawn(adc_task(&AUDIO_CHANNEL, p.ADC, p.DMA_CH0, p.PIN_26)));
             });
         },
     );
@@ -98,49 +98,6 @@ fn main() -> ! {
         unwrap!(spawner.spawn(usb_device_task(usb)));
         unwrap!(spawner.spawn(cdc_tx_task(cdc)));
     });
-}
-
-// ---------- Core1: ADC sampling ----------
-#[embassy_executor::task]
-async fn adc_task(
-    adc_peripheral: Peri<'static, ADC>,
-    dma: Peri<'static, DMA_CH0>,
-    pin: Peri<'static, PIN_26>,
-) {
-    info!("ADC task starting on Core 1");
-
-    let mut adc = Adc::new(adc_peripheral, IrqsADC, Config::default());
-    let mut p26 = Channel::new_pin(pin, Pull::None);
-
-    const SAMPLE_RATE_HZ: u32 = 44100;
-    const ADC_DIV: u16 = (48_000_000 / SAMPLE_RATE_HZ - 1) as u16;
-
-    let mut dma = dma;
-    let mut block_counter = 0u32;
-
-    loop {
-        let mut audio_block = AudioBlock::new();
-
-        match adc
-            .read_many(&mut p26, &mut audio_block.samples, ADC_DIV, dma.reborrow())
-            .await
-        {
-            Ok(_) => {
-                block_counter += 1;
-                audio_block.block_id = block_counter;
-                audio_block.timestamp = Instant::now().as_micros();
-                AUDIO_CHANNEL.send(audio_block).await;
-
-                if block_counter % 100 == 0 {
-                    info!("ADC: Captured block {}", block_counter);
-                }
-            }
-            Err(_) => {
-                error!("ADC read error");
-                Timer::after_millis(1).await;
-            }
-        }
-    }
 }
 
 // ---------- Core0: USB device run loop ----------
@@ -194,4 +151,3 @@ async fn cdc_tx_task(cdc: &'static mut CdcAcmClass<'static, Driver<'static, USB>
         }
     }
 }
-

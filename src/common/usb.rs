@@ -1,6 +1,6 @@
 use embassy_rp::peripherals::USB;
 use embassy_rp::usb::{Driver, InterruptHandler as USBInterruptHandler};
-use embassy_usb::class::cdc_acm::{CdcAcmClass, State as CdcState};
+use embassy_usb::class::cdc_acm::{CdcAcmClass};
 // ---------- Helpers ----------
 pub async fn write_cdc_chunked(
     cdc: &mut CdcAcmClass<'static, Driver<'static, USB>>,

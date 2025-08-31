@@ -19,12 +19,6 @@ use pinot_voir::common::usb::{cdc_tx_task, init_usb, usb_device_task};
 use static_cell::StaticCell;
 use {defmt_rtt as _, panic_probe as _};
 
-// ---------- Interrupts ----------
-
-bind_interrupts!(struct IrqsADC {
-    ADC_IRQ_FIFO => ADCInterruptHandler;
-});
-
 // ---------- Executors / Core stacks ----------
 static mut CORE1_STACK: Stack<4096> = Stack::new();
 static EXECUTOR0: StaticCell<Executor> = StaticCell::new();

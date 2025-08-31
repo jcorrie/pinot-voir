@@ -32,7 +32,7 @@ def is_audio_data(data):
     # Check if data contains reasonable 16-bit values (not debug text)
     try:
         # Try to interpret as 16-bit samples
-        samples = struct.unpack(f"<{len(data) // 2}H", data)
+        samples = struct.unpack(f"<{len(data) // 2}h", data)
         # ADC on Pico gives 12-bit values (0-4095), stored in 16-bit
         # Reasonable range check
         if all(-2048 <= sample <= 2047 for sample in samples):

@@ -85,10 +85,10 @@ async fn udp_tx_task(
     target_ip: IpAddress,
     port: u16,
 ) -> ! {
-    let mut rx_buffer = [0; 1024];
-    let mut tx_buffer = [0; 1024];
-    let mut rx_meta = [PacketMetadata::EMPTY; 16];
-    let mut tx_meta = [PacketMetadata::EMPTY; 16];
+    let mut rx_buffer = [0; 4096]; // Was 1024
+    let mut tx_buffer = [0; 4096]; // Was 1024
+    let mut rx_meta = [PacketMetadata::EMPTY; 64]; // Was 16
+    let mut tx_meta = [PacketMetadata::EMPTY; 64]; // Was 16
 
     let endpoint = IpEndpoint::new(target_ip, port);
     let mut socket = UdpSocket::new(
@@ -103,31 +103,38 @@ async fn udp_tx_task(
     let mut stats_timer = Instant::now();
     let mut blocks_ok = 0u32;
     let mut blocks_err = 0u32;
-    
+
     // Calculate the exact timing for each audio block
     // 512 samples at 44100 Hz = 11.61ms per block
     const SAMPLE_RATE_HZ: u32 = 44100;
-    const BLOCK_DURATION_MICROS: u64 = (AUDIO_BUFFER_SIZE as u64 * 1_000_000) / SAMPLE_RATE_HZ as u64;
-    
-    info!("UDP task: Block duration = {} microseconds", BLOCK_DURATION_MICROS);
+    const BLOCK_DURATION_MICROS: u64 =
+        (AUDIO_BUFFER_SIZE as u64 * 1_000_000) / SAMPLE_RATE_HZ as u64;
+
+    info!(
+        "UDP task: Block duration = {} microseconds",
+        BLOCK_DURATION_MICROS
+    );
 
     loop {
         let send_start = Instant::now();
-        
+
         // Get the latest block, dropping any that have queued up
         let mut block: AudioBlock = audio_channel.receive().await;
         let mut dropped_count = 0;
-        
+
         // Drop excess blocks to maintain real-time performance
         while let Ok(newer_block) = audio_channel.try_receive() {
             block = newer_block;
             dropped_count += 1;
         }
-        
+
         if dropped_count > 0 {
-            info!("Dropped {} audio blocks to maintain real-time", dropped_count);
+            info!(
+                "Dropped {} audio blocks to maintain real-time",
+                dropped_count
+            );
         }
-        
+
         let samples = block.centre_samples();
         let bytes: &[u8] = bytemuck::cast_slice(&samples);
 
@@ -142,14 +149,18 @@ async fn udp_tx_task(
 
         // Calculate how long we spent processing and sending
         let processing_time = send_start.elapsed();
-        
+
         // Wait for the remainder of the block period
         if processing_time.as_micros() < BLOCK_DURATION_MICROS {
             let wait_time = BLOCK_DURATION_MICROS - processing_time.as_micros();
             Timer::after_micros(wait_time).await;
         } else {
             // If processing took longer than expected, log a warning but don't wait
-            info!("Processing took {}μs, expected {}μs", processing_time.as_micros(), BLOCK_DURATION_MICROS);
+            info!(
+                "Processing took {}μs, expected {}μs",
+                processing_time.as_micros(),
+                BLOCK_DURATION_MICROS
+            );
         }
 
         // Stats reporting
@@ -161,7 +172,7 @@ async fn udp_tx_task(
                 (blocks_ok as f32 / total as f32) * 100.0
             };
             info!(
-                "UDP Stats: {} ok, {} err ({}% ok), last processing time: {}μs", 
+                "UDP Stats: {} ok, {} err ({}% ok), last processing time: {}μs",
                 blocks_ok,
                 blocks_err,
                 pct,

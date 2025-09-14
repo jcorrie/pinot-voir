@@ -67,7 +67,7 @@ async fn main(spawner: Spawner) {
         SharedEmbassyWifiPicoCore(make_static!(Mutex::new(embassy_pico_wifi_core)));
 
     // ---------- Spawn UDP task ----------
-    let target_ip = IpAddress::v4(255, 255, 255, 255);
+    let target_ip = IpAddress::v4(192, 168, 1, 90);
     let port = 1234;
     unwrap!(spawner.spawn(udp_tx_task(
         &AUDIO_CHANNEL,

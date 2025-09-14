@@ -1,16 +1,16 @@
 use defmt::*;
-use embassy_rp::Peri;
 use embassy_rp::adc::{Adc, Channel, Config, InterruptHandler as ADCInterruptHandler};
 use embassy_rp::bind_interrupts;
 use embassy_rp::gpio::Pull;
 use embassy_rp::peripherals::{ADC, DMA_CH1, PIN_26};
+use embassy_rp::Peri;
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::channel::Channel as SyncChannel;
 use embassy_time::{Instant, Timer};
 use {defmt_rtt as _, panic_probe as _};
 
 pub const AUDIO_BUFFER_SIZE: usize = 512;
-pub const AUDIO_SAMPLE_RATE_HZ: u32 = 12000;
+pub const AUDIO_SAMPLE_RATE_HZ: u32 = 44100;
 
 #[derive(Clone, Copy)]
 pub struct AudioBlock {
@@ -37,7 +37,7 @@ impl AudioBlock {
     pub fn centre_samples(&self) -> [i16; AUDIO_BUFFER_SIZE] {
         self.samples.map(|x| {
             let centered = (x as i32) - 2048; // widen first, -2048..+2047
-            (centered * 16) as i16 // scale into ~-32768..+32752
+            centered as i16 // scale into ~-32768..+32752
         })
     }
 }
@@ -76,8 +76,6 @@ pub async fn adc_task(
                 audio_block.block_id = block_counter;
                 audio_block.timestamp = Instant::now().as_micros();
                 audio_channel.send(audio_block).await;
-
-
             }
             Err(_) => {
                 error!("ADC read error");

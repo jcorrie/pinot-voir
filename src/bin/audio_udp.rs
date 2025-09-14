@@ -76,8 +76,8 @@ async fn main(spawner: Spawner) {
         port,
     )));
 }
+// ...existing code...
 
-/// Task running on Core0: reads AudioBlocks and sends via UDP with proper rate limiting
 #[embassy_executor::task]
 async fn udp_tx_task(
     audio_channel: &'static SyncChannel<CriticalSectionRawMutex, AudioBlock, 4>,
@@ -104,6 +104,8 @@ async fn udp_tx_task(
     let mut stats_timer = Instant::now();
     let mut blocks_ok = 0u32;
     let mut blocks_err = 0u32;
+    let mut consecutive_errors = 0u32;
+    let mut blocks_dropped = 0u32;
 
     // Calculate the exact timing for each audio block
     // 512 samples at 44100 Hz = 11.61ms per block
@@ -130,37 +132,70 @@ async fn udp_tx_task(
         }
 
         if dropped_count > 0 {
+            blocks_dropped += dropped_count;
             info!(
                 "Dropped {} audio blocks to maintain real-time",
                 dropped_count
             );
         }
 
+        // Circuit breaker: if we have too many consecutive errors, skip blocks
+        if consecutive_errors > 5 {
+            info!("Circuit breaker: skipping block due to network overload");
+            blocks_dropped += 1;
+            // Wait longer to let network recover
+            Timer::after_millis(50).await;
+            continue;
+        }
+
         let samples = block.centre_samples();
         let bytes: &[u8] = bytemuck::cast_slice(&samples);
 
-        // Send the audio block
+        // Send the audio block with timeout
         match socket.send_to(bytes, endpoint).await {
-            Ok(_) => blocks_ok += 1,
+            Ok(_) => {
+                blocks_ok += 1;
+                consecutive_errors = 0; // Reset error counter on success
+            }
             Err(e) => {
                 blocks_err += 1;
-                info!("UDP send error: {:?}", e);
+                consecutive_errors += 1;
+                info!(
+                    "UDP send error: {:?} (consecutive: {})",
+                    e, consecutive_errors
+                );
+
+                // Exponential backoff based on error count
+                let backoff_ms = match consecutive_errors {
+                    1..=2 => 5,
+                    3..=5 => 20,
+                    _ => 100,
+                };
+                Timer::after_millis(backoff_ms).await;
             }
         }
 
         // Calculate how long we spent processing and sending
         let processing_time = send_start.elapsed();
 
+        // Adaptive rate limiting: slow down if we're having errors
+        let target_delay = if consecutive_errors > 0 {
+            // Slower rate when having network issues
+            BLOCK_DURATION_MICROS * 2
+        } else {
+            BLOCK_DURATION_MICROS
+        };
+
         // Wait for the remainder of the block period
-        if processing_time.as_micros() < BLOCK_DURATION_MICROS {
-            let wait_time = BLOCK_DURATION_MICROS - processing_time.as_micros();
+        if processing_time.as_micros() < target_delay {
+            let wait_time = target_delay - processing_time.as_micros();
             Timer::after_micros(wait_time).await;
         } else {
             // If processing took longer than expected, log a warning but don't wait
             info!(
                 "Processing took {}μs, expected {}μs",
                 processing_time.as_micros(),
-                BLOCK_DURATION_MICROS
+                target_delay
             );
         }
 
@@ -173,10 +208,12 @@ async fn udp_tx_task(
                 (blocks_ok as f32 / total as f32) * 100.0
             };
             info!(
-                "UDP Stats: {} ok, {} err ({}% ok), last processing time: {}μs",
+                "UDP Stats: {} ok, {} err, {} dropped ({}% ok), consecutive errors: {}, last processing time: {}μs",
                 blocks_ok,
                 blocks_err,
+                blocks_dropped,
                 pct,
+                consecutive_errors,
                 processing_time.as_micros()
             );
             stats_timer = Instant::now();

@@ -109,7 +109,7 @@ async fn udp_tx_task(
 
     // Calculate the exact timing for each audio block
     // 512 samples at 44100 Hz = 11.61ms per block
-    const SAMPLE_RATE_HZ: u32 = 44100;
+    const SAMPLE_RATE_HZ: u32 = 8000;
     const BLOCK_DURATION_MICROS: u64 =
         (AUDIO_BUFFER_SIZE as u64 * 1_000_000) / SAMPLE_RATE_HZ as u64;
 

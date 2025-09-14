@@ -151,18 +151,18 @@ async fn udp_tx_task(
         let processing_time = send_start.elapsed();
 
         // Wait for the remainder of the block period
+        let min_wait = 500; // microseconds, tweak as needed
         if processing_time.as_micros() < BLOCK_DURATION_MICROS {
             let wait_time = BLOCK_DURATION_MICROS - processing_time.as_micros();
-            Timer::after_micros(wait_time).await;
+            Timer::after_micros(wait_time.max(min_wait)).await;
         } else {
-            // If processing took longer than expected, log a warning but don't wait
+            Timer::after_micros(min_wait).await; // Still yield to networking stack
             info!(
                 "Processing took {}μs, expected {}μs",
                 processing_time.as_micros(),
                 BLOCK_DURATION_MICROS
             );
         }
-
         // Stats reporting
         if stats_timer.elapsed() >= Duration::from_secs(2) {
             let total = blocks_ok + blocks_err;

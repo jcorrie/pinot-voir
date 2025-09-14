@@ -1,6 +1,7 @@
 import socket
 import wave
 import time
+from app.utils import FRAME_RATE
 
 def udp_stream_to_file(listen_ip='0.0.0.0', listen_port=1234, output_file='output.raw', duration=5):
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -19,7 +20,7 @@ def udp_stream_to_file(listen_ip='0.0.0.0', listen_port=1234, output_file='outpu
             except socket.timeout:
                 break
 
-def convert_raw_to_wav(raw_file, wav_file, channels=1, sampwidth=2, framerate=44100):
+def convert_raw_to_wav(raw_file, wav_file, channels=1, sampwidth=2, framerate=FRAME_RATE):
     with open(raw_file, 'rb') as rf:
         raw_data = rf.read()
     with wave.open(wav_file, 'wb') as wf:

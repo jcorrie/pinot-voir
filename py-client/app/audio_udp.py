@@ -4,16 +4,16 @@ import time
 import numpy as np
 import sounddevice as sd
 from collections import deque
+from app.utils import FRAME_RATE
 
 UDP_IP = "0.0.0.0"  # Listen on all interfaces
 UDP_PORT = 1234
-FRAME_RATE = 44100
 CHANNELS = 1
 SAMPLE_WIDTH = 2  # int16
 BLOCK_SIZE = 512
 MAX_PACKET_SIZE = 1024
 
-def is_audio_data(data):
+def _is_audio_data(data):
     if len(data) % 2 != 0:
         return False
     try:
@@ -92,7 +92,7 @@ with sd.OutputStream(
             last_stats_time = current_time
         
         # Small sleep to prevent busy waiting
-        time.sleep(0.001)
+        # time.sleep(0.001)
 
 sock.close()
 print("Live UDP audio streaming finished.")

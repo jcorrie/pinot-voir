@@ -2,13 +2,13 @@ import serial
 import time
 import struct
 import sounddevice as sd
+from app.utils import FRAME_RATE
 
 SERIAL_PORT = "/dev/ttyACM1"
 BAUD_RATE = 115200
 TIMEOUT = 0.1
 CHANNELS = 1
 SAMPLE_WIDTH = 2
-FRAME_RATE = 44100
 RECORD_SECONDS = 515
 
 def is_audio_data(data):

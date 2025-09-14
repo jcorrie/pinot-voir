@@ -16,7 +16,7 @@ use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::channel::Channel as SyncChannel;
 use embassy_sync::mutex::Mutex;
 use embassy_time::{Duration, Instant, Timer};
-use pinot_voir::common::adc_microphone::{adc_task, AudioBlock, AUDIO_BUFFER_SIZE};
+use pinot_voir::common::adc_microphone::{adc_task, AudioBlock, AUDIO_BUFFER_SIZE, AUDIO_SAMPLE_RATE_HZ};
 use pinot_voir::common::shared_functions::EnvironmentVariables;
 use pinot_voir::common::wifi::{EmbassyPicoWifiCore, SharedEmbassyWifiPicoCore};
 use static_cell::make_static;
@@ -105,10 +105,8 @@ async fn udp_tx_task(
     let mut blocks_err = 0u32;
 
     // Calculate the exact timing for each audio block
-    // 512 samples at 44100 Hz = 11.61ms per block
-    const SAMPLE_RATE_HZ: u32 = 44100;
     const BLOCK_DURATION_MICROS: u64 =
-        (AUDIO_BUFFER_SIZE as u64 * 1_000_000) / SAMPLE_RATE_HZ as u64;
+        (AUDIO_BUFFER_SIZE as u64 * 1_000_000) / AUDIO_SAMPLE_RATE_HZ as u64;
 
     info!(
         "UDP task: Block duration = {} microseconds",

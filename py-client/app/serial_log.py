@@ -3,6 +3,7 @@ import time
 import wave
 import os
 import struct
+from app.utils import FRAME_RATE
 
 SERIAL_PORT = "/dev/ttyACM1"
 BAUD_RATE = 115200
@@ -14,7 +15,6 @@ WAV_FILENAME = "data/audio.wav"
 # Audio parameters - must match your Pico settings
 CHANNELS = 1
 SAMPLE_WIDTH = 2  # bytes (16-bit audio)
-FRAME_RATE = 44100  # Hz
 EXPECTED_CHUNK_SIZE = 1024 * 2  # 1024 samples * 2 bytes per sample
 
 # Calculate expected data rate for validation

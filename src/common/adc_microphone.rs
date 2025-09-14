@@ -10,6 +10,7 @@ use embassy_time::{Instant, Timer};
 use {defmt_rtt as _, panic_probe as _};
 
 pub const AUDIO_BUFFER_SIZE: usize = 512;
+pub const AUDIO_SAMPLE_RATE_HZ: u32 = 12000;
 
 #[derive(Clone, Copy)]
 pub struct AudioBlock {
@@ -58,8 +59,7 @@ pub async fn adc_task(
     let mut adc = Adc::new(adc_peripheral, IrqsADC, Config::default());
     let mut p26 = Channel::new_pin(pin, Pull::None);
 
-    const SAMPLE_RATE_HZ: u32 = 44100;
-    const ADC_DIV: u16 = (48_000_000 / SAMPLE_RATE_HZ - 1) as u16;
+    const ADC_DIV: u16 = (48_000_000 / AUDIO_SAMPLE_RATE_HZ - 1) as u16;
 
     let mut dma = dma;
     let mut block_counter = 0u32;
@@ -77,9 +77,7 @@ pub async fn adc_task(
                 audio_block.timestamp = Instant::now().as_micros();
                 audio_channel.send(audio_block).await;
 
-                if block_counter.is_multiple_of(100) {
-                    info!("ADC: Captured block {}", block_counter);
-                }
+
             }
             Err(_) => {
                 error!("ADC read error");

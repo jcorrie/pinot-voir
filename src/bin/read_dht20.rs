@@ -39,7 +39,7 @@ async fn main(_spawner: Spawner) {
     let delay = Duration::from_secs(1);
     let sda = p.PIN_2;
     let scl = p.PIN_3;
-    let mut i2c = i2c::I2c::new_async(p.I2C1, scl, sda, Irqs, Config::default());
+    let i2c = i2c::I2c::new_blocking(p.I2C1, scl, sda, Config::default());
 
     let mut dht_pin = DHT20::new(i2c, Delay);
 

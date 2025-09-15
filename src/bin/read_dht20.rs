@@ -5,25 +5,14 @@ use cyw43_pio::PioSpi;
 use embassy_dht::dht20::DHT20;
 
 use embassy_executor::Spawner;
-use embassy_rp::bind_interrupts;
 use embassy_rp::gpio::Output;
 use embassy_rp::peripherals::{DMA_CH0, PIO0};
 
-use embassy_rp::i2c::{self, Config, InterruptHandler};
+use embassy_rp::i2c::{self, Config};
 use embassy_time::{Delay, Duration, Timer};
 use {defmt_rtt as _, panic_probe as _};
 
-use embassy_rp::peripherals::I2C1;
-use embedded_hal_async::i2c::I2c;
 use {defmt_rtt as _, panic_probe as _};
-
-// bind_interrupts!(struct Irqs {
-//     PIO0_IRQ_0 => InterruptHandler<PIO0>;
-// });
-
-bind_interrupts!(struct Irqs {
-    I2C1_IRQ => InterruptHandler<I2C1>;
-});
 
 #[embassy_executor::task]
 async fn cyw43_task(

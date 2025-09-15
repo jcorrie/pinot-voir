@@ -36,7 +36,7 @@ async fn main(spawner: Spawner) {
     let p = embassy_rp::init(Default::default());
     let mut led = Output::new(p.PIN_15, Level::High);
 
-    let dt = 100 * 1_000_000;
+    let dt = 100 * 7000;
     let k = 1.003;
 
     unwrap!(spawner.spawn(toggle_led(CHANNEL.sender(), Duration::from_nanos(dt))));

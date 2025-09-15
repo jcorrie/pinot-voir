@@ -75,6 +75,7 @@ embassy-usb-logger = "0.5.1"
 embassy-usb = { version = "0.5.1", features = ["defmt"] }
 log = "0.4.27"
 embassy-usb-driver = "0.2.0"
+embedded-hal-async = "1.0.0"
 
 [patch.crates-io]
 embassy-dht = { git = "https://github.com/jcorrie/embassy-dht", branch = "dhtsensor-trait" }
@@ -122,6 +123,12 @@ test = false
 doctest = false
 bench = false
 
+[[bin]]
+name = "read_dht20"
+path = "src/bin/read_dht20.rs"
+test = false
+doctest = false
+bench = false
 
 [[bin]]
 name = "supabase"

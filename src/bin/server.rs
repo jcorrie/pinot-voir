@@ -186,9 +186,6 @@ async fn main(spawner: Spawner) {
     let shared_sensor = SharedSensor(make_static!(Mutex::new(DHT22::new(p.PIN_16, Delay))));
     let shared_sensor_state = SharedSensorsState(make_static!(Mutex::new(SensorState::new())));
 
-    spawner
-        .spawn(wifi_autoheal_task(shared_wifi_core, environment_variables))
-        .unwrap();
 
     // for some reason, idk why, I can only spawn one less than the pool size
     // otherwise it panics

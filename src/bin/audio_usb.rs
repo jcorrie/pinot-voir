@@ -5,12 +5,9 @@
 
 use defmt::*;
 use embassy_executor::Executor;
-use embassy_rp::adc::InterruptHandler as ADCInterruptHandler;
-use embassy_rp::bind_interrupts;
 use embassy_rp::multicore::{Stack, spawn_core1};
 use embassy_rp::peripherals::USB;
-use embassy_rp::time_driver::init;
-use embassy_rp::usb::{Driver, InterruptHandler as USBInterruptHandler};
+use embassy_rp::usb::Driver;
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::channel::Channel as SyncChannel;
 use embassy_usb::class::cdc_acm::{CdcAcmClass, State as CdcState};

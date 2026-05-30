@@ -8,10 +8,7 @@ use embassy_executor::Executor;
 use embassy_executor::Spawner;
 use embassy_net::udp::{PacketMetadata, UdpSocket};
 use embassy_net::{IpAddress, IpEndpoint};
-use embassy_rp::adc::InterruptHandler as ADCInterruptHandler;
-use embassy_rp::bind_interrupts;
 use embassy_rp::multicore::{spawn_core1, Stack};
-use embassy_rp::peripherals::{ADC, DMA_CH0, PIN_26};
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::channel::Channel as SyncChannel;
 use embassy_sync::mutex::Mutex;
@@ -25,7 +22,6 @@ use {defmt_rtt as _, panic_probe as _};
 
 // ---------- Executors / Core stacks ----------
 static mut CORE1_STACK: Stack<4096> = Stack::new();
-static EXECUTOR0: StaticCell<Executor> = StaticCell::new();
 static EXECUTOR1: StaticCell<Executor> = StaticCell::new();
 
 // ---------- Audio channel ----------
@@ -51,7 +47,7 @@ async fn main(spawner: Spawner) {
     );
 
     // ---------- Core0: Connect Wi-Fi asynchronously ----------
-    let mut embassy_pico_wifi_core = EmbassyPicoWifiCore::connect_to_network(
+    let embassy_pico_wifi_core = EmbassyPicoWifiCore::connect_to_network(
         p.PIN_23,
         p.PIN_24,
         p.PIN_25,

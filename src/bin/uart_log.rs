@@ -7,8 +7,9 @@ use defmt::info;
 use embassy_executor::Spawner;
 use embassy_rp::adc::{Adc, Channel, Config, InterruptHandler as ADCInterruptHandler};
 use embassy_rp::bind_interrupts;
+use embassy_rp::dma;
 use embassy_rp::gpio::Pull;
-use embassy_rp::peripherals::USB;
+use embassy_rp::peripherals::{DMA_CH0, USB};
 use embassy_rp::usb::{Driver, InterruptHandler as USBInterruptHandler};
 use embassy_usb::UsbDevice;
 use embassy_usb::class::cdc_acm::{CdcAcmClass, State};
@@ -22,6 +23,9 @@ bind_interrupts!(struct Irqs {
 bind_interrupts!(struct IrqsADC {
     ADC_IRQ_FIFO => ADCInterruptHandler;
 });
+bind_interrupts!(struct IrqsDMA {
+    DMA_IRQ_0 => dma::InterruptHandler<DMA_CH0>;
+});
 
 async fn write_cdc_chunked<'a>(
     cdc: &mut CdcAcmClass<'static, Driver<'static, USB>>,
@@ -32,16 +36,10 @@ async fn write_cdc_chunked<'a>(
     while offset < data.len() {
         let end = (offset + max_packet_size).min(data.len());
         let chunk = &data[offset..end];
-        // Wait for connection just in case
         cdc.wait_connection().await;
-        // Try writing
         match cdc.write_packet(chunk).await {
             Ok(_) => offset = end,
-            Err(e) => {
-                // Handle or retry error (e.g., BufferOverflow)
-                // Could add delay before retry, or return error to caller
-                return Err(e);
-            }
+            Err(e) => return Err(e),
         }
     }
     Ok(())
@@ -79,11 +77,11 @@ async fn main(spawner: Spawner) {
     let mut cdc = CdcAcmClass::new(&mut usb_builder, STATE.init(State::new()), 64);
     let usb = usb_builder.build();
 
-    spawner.spawn(usb_task(usb)).unwrap();
+    spawner.spawn(usb_task(usb).unwrap());
 
     // ADC setup
     let mut adc = Adc::new(p.ADC, IrqsADC, Config::default());
-    let mut dma = p.DMA_CH0;
+    let mut dma = dma::Channel::new(p.DMA_CH0, IrqsDMA);
     let mut p26 = Channel::new_pin(p.PIN_26, Pull::None);
 
     const BUFFER_SIZE: usize = 1024;
@@ -95,22 +93,21 @@ async fn main(spawner: Spawner) {
         loop {
             let mut audio_buffer: [u16; BUFFER_SIZE] = [0_u16; BUFFER_SIZE];
             if let Ok(_) = adc
-                .read_many(&mut p26, &mut audio_buffer, ADC_DIV, dma.reborrow())
+                .read_many(&mut p26, &mut audio_buffer, ADC_DIV, &mut dma)
                 .await
             {
                 let audio_bytes: &[u8] = bytemuck::cast_slice(&audio_buffer);
                 info!("{}", &audio_bytes);
-                // Write audio bytes to USB CDC ACM
                 let result = write_cdc_chunked(&mut cdc, audio_bytes).await;
                 match result {
                     Ok(_) => {}
                     Err(e) => {
                         info!("USB write error: {:?}", e);
-                        break; // If USB write fails, break and wait for next connection
+                        break;
                     }
                 }
             } else {
-                break; // If ADC fails, break and wait for next connection
+                break;
             }
         }
     }

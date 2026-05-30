@@ -12,7 +12,7 @@ use embassy_rp::clocks::RoscRng;
 use embassy_rp::gpio::{Level, Output};
 use embassy_rp::Peri;
 use embassy_rp::dma;
-use embassy_rp::peripherals::{DMA_CH0, PIN_23, PIN_24, PIN_25, PIN_29, PIO0};
+use embassy_rp::peripherals::{DMA_CH0, DMA_CH1, PIN_23, PIN_24, PIN_25, PIN_29, PIO0};
 use embassy_rp::pio::{InterruptHandler, Pio};
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, mutex::Mutex};
 use embassy_time::{Duration, Timer};
@@ -21,9 +21,12 @@ use static_cell::StaticCell;
 
 pub const WEB_TASK_POOL_SIZE: usize = 12;
 
-bind_interrupts!(struct Irqs {
+// Shared interrupt bindings for the whole project. DMA_IRQ_0 is used by both
+// the WiFi SPI (DMA_CH0) and the ADC audio path (DMA_CH1); only one handler
+// for DMA_IRQ_0 may exist per binary, so we centralise it here.
+bind_interrupts!(pub struct Irqs {
     PIO0_IRQ_0 => InterruptHandler<PIO0>;
-    DMA_IRQ_0 => dma::InterruptHandler<DMA_CH0>;
+    DMA_IRQ_0 => dma::InterruptHandler<DMA_CH0>, dma::InterruptHandler<DMA_CH1>;
 });
 
 #[embassy_executor::task]

@@ -19,14 +19,16 @@ use pinot_voir::common::wifi::{EmbassyPicoWifiCore, HttpBuffers};
 use reqwless::client::{HttpClient, HttpConnection, TlsConfig, TlsVerify};
 use reqwless::request::{Method, RequestBuilder};
 use reqwless::response::Response;
-use static_cell::make_static;
+use static_cell::StaticCell;
 
 use {defmt_rtt as _, panic_probe as _};
+
+static ENV: StaticCell<EnvironmentVariables> = StaticCell::new();
 
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
     let environment_variables: &'static EnvironmentVariables =
-        make_static!(EnvironmentVariables::new());
+        ENV.init(EnvironmentVariables::new());
     let p = embassy_rp::init(Default::default());
     // Wifi prelude
     info!("Hello World!");

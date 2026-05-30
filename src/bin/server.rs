@@ -46,7 +46,9 @@ impl AppWithStateBuilder for AppProps {
             .route(
                 ("/set_led", parse_path_segment::<bool>()),
                 get(move |led_is_on: bool| async move {
+                    info!("set_led handler called: {}", led_is_on);
                     wifi_core.0.lock().await.control.gpio_set(0, led_is_on).await;
+                    info!("set_led gpio_set done");
                     DebugValue(led_is_on)
                 }),
             )

@@ -2,8 +2,9 @@ use defmt::*;
 use embassy_rp::Peri;
 use embassy_rp::adc::{Adc, Channel, Config, InterruptHandler as ADCInterruptHandler};
 use embassy_rp::bind_interrupts;
+use embassy_rp::dma;
 use embassy_rp::gpio::Pull;
-use embassy_rp::peripherals::{ADC, DMA_CH1, PIN_26};
+use embassy_rp::peripherals::{ADC, PIN_26};
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::channel::Channel as SyncChannel;
 use embassy_time::{Instant, Timer};
@@ -50,7 +51,7 @@ bind_interrupts!(struct IrqsADC {
 pub async fn adc_task(
     audio_channel: &'static SyncChannel<CriticalSectionRawMutex, AudioBlock, 4>,
     adc_peripheral: Peri<'static, ADC>,
-    dma: Peri<'static, DMA_CH1>,
+    dma: dma::Channel<'static>,
     pin: Peri<'static, PIN_26>,
 ) {
     info!("ADC task starting on Core 1");
@@ -68,7 +69,7 @@ pub async fn adc_task(
         let mut audio_block = AudioBlock::new();
 
         match adc
-            .read_many(&mut p26, &mut audio_block.samples, ADC_DIV, dma.reborrow())
+            .read_many(&mut p26, &mut audio_block.samples, ADC_DIV, &mut dma)
             .await
         {
             Ok(_) => {

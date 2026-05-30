@@ -5,6 +5,7 @@
 #![no_std]
 #![no_main]
 #![allow(async_fn_in_trait)]
+#![allow(non_exhaustive_patterns)] // LSP false positive from #[embassy_executor::main]
 #![feature(type_alias_impl_trait)]
 #![feature(impl_trait_in_assoc_type)]
 use defmt::*;
@@ -15,18 +16,18 @@ use picoserve::extract::Json;
 use picoserve::extract::State;
 use pinot_voir::common::dht22_tools::DHT22;
 use pinot_voir::common::sensor_tools::SensorState;
-use pinot_voir::common::shared_functions::{EnvironmentVariables, blink_n_times};
+use pinot_voir::common::shared_functions::{blink_n_times, EnvironmentVariables};
 use pinot_voir::common::wifi::{
-    EmbassyPicoWifiCore, SharedEmbassyWifiPicoCore, WEB_TASK_POOL_SIZE, wifi_autoheal_task,
+    wifi_autoheal_task, EmbassyPicoWifiCore, SharedEmbassyWifiPicoCore, WEB_TASK_POOL_SIZE,
 };
 
 use picoserve::{
-    AppRouter, AppWithStateBuilder,
     response::DebugValue,
-    routing::{PathRouter, get, parse_path_segment},
+    routing::{get, parse_path_segment, PathRouter},
+    AppRouter, AppWithStateBuilder,
 };
 
-use static_cell::make_static;
+use static_cell::StaticCell;
 
 use {defmt_rtt as _, panic_probe as _};
 
@@ -82,7 +83,7 @@ async fn web_task(
     id: usize,
     stack: embassy_net::Stack<'static>,
     app: &'static AppRouter<AppProps>,
-    config: &'static picoserve::Config<Duration>,
+    config: &'static picoserve::Config,
     state: AppState,
 ) -> ! {
     let port = 80;
@@ -90,18 +91,12 @@ async fn web_task(
     let mut tcp_tx_buffer = [0; 1024];
     let mut http_buffer = [0; 2048];
 
-    picoserve::listen_and_serve_with_state(
-        id,
-        app,
-        config,
-        stack,
-        port,
-        &mut tcp_rx_buffer,
-        &mut tcp_tx_buffer,
-        &mut http_buffer,
-        &state,
-    )
-    .await
+    let app_shared = app.shared();
+    let app_with_state = app_shared.with_state(&state);
+    picoserve::Server::new(&app_with_state, config, &mut http_buffer)
+        .listen_and_serve(id, stack, port, &mut tcp_rx_buffer, &mut tcp_tx_buffer)
+        .await
+        .into_never()
 }
 
 #[derive(Clone, Copy)]
@@ -144,10 +139,19 @@ impl picoserve::extract::FromRef<AppState> for AppState {
     }
 }
 
+static ENV: StaticCell<EnvironmentVariables> = StaticCell::new();
+static APP: StaticCell<AppRouter<AppProps>> = StaticCell::new();
+static CONFIG: StaticCell<picoserve::Config> = StaticCell::new();
+static WIFI_CORE: StaticCell<Mutex<CriticalSectionRawMutex, EmbassyPicoWifiCore>> =
+    StaticCell::new();
+static SENSOR: StaticCell<Mutex<CriticalSectionRawMutex, DHT22<'static, Delay>>> =
+    StaticCell::new();
+static SENSOR_STATE: StaticCell<Mutex<CriticalSectionRawMutex, SensorState>> = StaticCell::new();
+
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
     let environment_variables: &'static EnvironmentVariables =
-        make_static!(EnvironmentVariables::new());
+        ENV.init(EnvironmentVariables::new());
     let p = embassy_rp::init(Default::default());
     // Wifi prelude
     info!("Hello World!");
@@ -167,30 +171,29 @@ async fn main(spawner: Spawner) {
     // And now we can use it!
     blink_n_times(&mut embassy_pico_wifi_core.control, 1).await;
 
-    let app = make_static!(AppProps.build_app());
+    let app: &'static AppRouter<AppProps> = APP.init(AppProps.build_app());
 
     info!("Starting web server");
 
-    let config = make_static!(
+    let config: &'static picoserve::Config = CONFIG.init(
         picoserve::Config::new(picoserve::Timeouts {
-            start_read_request: Some(Duration::from_secs(5)),
-            persistent_start_read_request: Some(Duration::from_secs(1)),
-            read_request: Some(Duration::from_secs(1)),
-            write: Some(Duration::from_secs(1)),
+            start_read_request: Duration::from_secs(5),
+            persistent_start_read_request: Duration::from_secs(1),
+            read_request: Duration::from_secs(1),
+            write: Duration::from_secs(1),
         })
-        .keep_connection_alive()
+        .keep_connection_alive(),
     );
 
     let shared_wifi_core: SharedEmbassyWifiPicoCore =
-        SharedEmbassyWifiPicoCore(make_static!(Mutex::new(embassy_pico_wifi_core)));
-    let shared_sensor = SharedSensor(make_static!(Mutex::new(DHT22::new(p.PIN_16, Delay))));
-    let shared_sensor_state = SharedSensorsState(make_static!(Mutex::new(SensorState::new())));
-
+        SharedEmbassyWifiPicoCore(WIFI_CORE.init(Mutex::new(embassy_pico_wifi_core)));
+    let shared_sensor = SharedSensor(SENSOR.init(Mutex::new(DHT22::new(p.PIN_16, Delay))));
+    let shared_sensor_state = SharedSensorsState(SENSOR_STATE.init(Mutex::new(SensorState::new())));
 
     // for some reason, idk why, I can only spawn one less than the pool size
     // otherwise it panics
     for id in 1..(WEB_TASK_POOL_SIZE - 3) {
-        spawner.must_spawn(web_task(
+        spawner.spawn(web_task(
             id,
             shared_wifi_core.0.lock().await.stack,
             app,
@@ -200,7 +203,7 @@ async fn main(spawner: Spawner) {
                 shared_sensor: shared_sensor.clone(),
                 shared_sensor_state,
             },
-        ));
+        ).unwrap());
     }
 
     info!("Web server started");

@@ -11,6 +11,7 @@ use embassy_rp::bind_interrupts;
 use embassy_rp::clocks::RoscRng;
 use embassy_rp::gpio::{Level, Output};
 use embassy_rp::Peri;
+use embassy_rp::dma;
 use embassy_rp::peripherals::{DMA_CH0, PIN_23, PIN_24, PIN_25, PIN_29, PIO0};
 use embassy_rp::pio::{InterruptHandler, Pio};
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, mutex::Mutex};
@@ -22,11 +23,12 @@ pub const WEB_TASK_POOL_SIZE: usize = 12;
 
 bind_interrupts!(struct Irqs {
     PIO0_IRQ_0 => InterruptHandler<PIO0>;
+    DMA_IRQ_0 => dma::InterruptHandler<DMA_CH0>;
 });
 
 #[embassy_executor::task]
 async fn wifi_task(
-    runner: cyw43::Runner<'static, Output<'static>, PioSpi<'static, PIO0, 0, DMA_CH0>>,
+    runner: cyw43::Runner<'static, cyw43::SpiBus<Output<'static>, PioSpi<'static, PIO0, 0>>>,
 ) -> ! {
     runner.run().await
 }
@@ -54,29 +56,11 @@ impl EmbassyPicoWifiCore {
         pin_25: Peri<'static, PIN_25>,
         pin_29: Peri<'static, PIN_29>,
         pio_0: Peri<'static, PIO0>,
-
         dma_ch0: Peri<'static, DMA_CH0>,
         spawner: Spawner,
     ) -> Self {
-        let fw: &[u8];
-        let clm: &[u8];
-
-        pub const FLASH_NEW_FIRMWARE: bool = true;
-
-        match FLASH_NEW_FIRMWARE {
-            true => {
-                fw = include_bytes!("../../cyw43-firmware/43439A0.bin");
-                clm = include_bytes!("../../cyw43-firmware/43439A0_clm.bin");
-            }
-            false => {
-                // To make flashing faster for development, you may want to flash the firmwares independently
-                // at hardcoded addresses, instead of baking them into the program with `include_bytes!`:
-                //     probe-rs download 43439A0.bin --binary-format bin --chip RP2040 --base-address 0x10100000
-                //     probe-rs download 43439A0_clm.bin --binary-format bin --chip RP2040 --base-address 0x10140000
-                fw = unsafe { core::slice::from_raw_parts(0x10100000 as *const u8, 231077) };
-                clm = unsafe { core::slice::from_raw_parts(0x10140000 as *const u8, 984) };
-            }
-        }
+        let fw = cyw43::aligned_bytes!("../../cyw43-firmware/43439A0.bin");
+        let clm = cyw43::aligned_bytes!("../../cyw43-firmware/43439A0_clm.bin");
 
         let pwr = Output::new(pin_23, Level::Low);
         let cs = Output::new(pin_25, Level::High);
@@ -90,16 +74,13 @@ impl EmbassyPicoWifiCore {
             cs,
             pin_24,
             pin_29,
-            dma_ch0,
+            dma::Channel::new(dma_ch0, Irqs),
         );
         static STATE: StaticCell<cyw43::State> = StaticCell::new();
         let state = STATE.init(cyw43::State::new());
-        let (net_device, mut control, runner) = cyw43::new(state, pwr, spi, fw).await;
-        spawner
-            .spawn(wifi_task(runner))
-            .expect("failed to spawn wifi_task");
+        let (net_device, mut control, runner) = cyw43::new(state, pwr, spi, fw, clm).await;
+        spawner.spawn(wifi_task(runner).unwrap());
 
-        control.init(clm).await;
         control
             .set_power_management(cyw43::PowerManagementMode::PowerSave)
             .await;
@@ -115,9 +96,7 @@ impl EmbassyPicoWifiCore {
             seed,
         );
 
-        spawner
-            .spawn(net_task(runner))
-            .expect("failed to spawn net_task");
+        spawner.spawn(net_task(runner).unwrap());
 
         Self {
             control,
@@ -163,7 +142,7 @@ impl EmbassyPicoWifiCore {
         &mut self,
         wifi_ssid: &str,
         wifi_password: &str,
-    ) -> Result<(), cyw43::ControlError> {
+    ) -> Result<(), cyw43::JoinError> {
         info!("Joining network: {}", wifi_ssid);
         info!("Using password: {}", wifi_password);
         while let Err(err) = self
@@ -171,7 +150,7 @@ impl EmbassyPicoWifiCore {
             .join(wifi_ssid, JoinOptions::new(wifi_password.as_bytes()))
             .await
         {
-            info!("join failed with status={}", err.status);
+            info!("join failed with status={:?}", err);
         }
         info!("waiting for link...");
         self.stack.wait_link_up().await;
@@ -242,7 +221,7 @@ pub async fn wifi_autoheal_task(
                 .await
             {
                 Ok(_) => info!("Rejoined WiFi."),
-                Err(e) => info!("WiFi rejoin failed: status={}", e.status),
+                Err(e) => info!("WiFi rejoin failed: {:?}", e),
             }
         } else {
             info!("WiFi is connected");

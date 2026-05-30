@@ -10,8 +10,9 @@ use embassy_net::udp::{PacketMetadata, UdpSocket};
 use embassy_net::{IpAddress, IpEndpoint};
 use embassy_rp::adc::InterruptHandler as ADCInterruptHandler;
 use embassy_rp::bind_interrupts;
+use embassy_rp::dma;
 use embassy_rp::multicore::{spawn_core1, Stack};
-use embassy_rp::peripherals::{ADC, DMA_CH0, PIN_26};
+use embassy_rp::peripherals::{ADC, DMA_CH0, DMA_CH1, PIN_26};
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::channel::Channel as SyncChannel;
 use embassy_sync::mutex::Mutex;
@@ -19,8 +20,13 @@ use embassy_time::{Duration, Instant, Timer};
 use pinot_voir::common::adc_microphone::{adc_task, AudioBlock, AUDIO_BUFFER_SIZE};
 use pinot_voir::common::shared_functions::EnvironmentVariables;
 use pinot_voir::common::wifi::{EmbassyPicoWifiCore, SharedEmbassyWifiPicoCore};
-use static_cell::make_static;
 use static_cell::StaticCell;
+
+bind_interrupts!(struct AudioIrqs {
+    DMA_IRQ_0 => dma::InterruptHandler<DMA_CH1>;
+});
+
+static WIFI_CORE: StaticCell<Mutex<CriticalSectionRawMutex, pinot_voir::common::wifi::EmbassyPicoWifiCore>> = StaticCell::new();
 use {defmt_rtt as _, panic_probe as _};
 
 // ---------- Executors / Core stacks ----------
@@ -31,10 +37,12 @@ static EXECUTOR1: StaticCell<Executor> = StaticCell::new();
 // ---------- Audio channel ----------
 static AUDIO_CHANNEL: SyncChannel<CriticalSectionRawMutex, AudioBlock, 4> = SyncChannel::new();
 
+static ENV: StaticCell<EnvironmentVariables> = StaticCell::new();
+
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
     let environment_variables: &'static EnvironmentVariables =
-        make_static!(EnvironmentVariables::new());
+        ENV.init(EnvironmentVariables::new());
 
     let p = embassy_rp::init(Default::default());
 

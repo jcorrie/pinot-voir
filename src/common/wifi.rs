@@ -60,7 +60,8 @@ impl EmbassyPicoWifiCore {
         spawner: Spawner,
     ) -> Self {
         let fw = cyw43::aligned_bytes!("../../cyw43-firmware/43439A0.bin");
-        let clm = cyw43::aligned_bytes!("../../cyw43-firmware/43439A0_clm.bin");
+        let nvram = cyw43::aligned_bytes!("../../cyw43-firmware/nvram_rp2040.bin");
+        let clm = include_bytes!("../../cyw43-firmware/43439A0_clm.bin");
 
         let pwr = Output::new(pin_23, Level::Low);
         let cs = Output::new(pin_25, Level::High);
@@ -78,9 +79,10 @@ impl EmbassyPicoWifiCore {
         );
         static STATE: StaticCell<cyw43::State> = StaticCell::new();
         let state = STATE.init(cyw43::State::new());
-        let (net_device, mut control, runner) = cyw43::new(state, pwr, spi, fw, clm).await;
+        let (net_device, mut control, runner) = cyw43::new(state, pwr, spi, fw, nvram).await;
         spawner.spawn(wifi_task(runner).unwrap());
 
+        control.init(clm).await;
         control
             .set_power_management(cyw43::PowerManagementMode::PowerSave)
             .await;

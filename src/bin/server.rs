@@ -31,27 +31,24 @@ use static_cell::StaticCell;
 
 use {defmt_rtt as _, panic_probe as _};
 
-struct AppProps;
+struct AppProps {
+    shared_wifi_core: SharedEmbassyWifiPicoCore,
+}
 
 impl AppWithStateBuilder for AppProps {
     type State = AppState;
     type PathRouter = impl PathRouter<AppState>;
 
     fn build_app(self) -> picoserve::Router<Self::PathRouter, Self::State> {
+        let wifi_core = self.shared_wifi_core;
         picoserve::Router::new()
             .route("/", get(|| async move { "Hello world 2." }))
             .route(
-                ("/set_led", parse_path_segment()),
-                get(
-                    |led_is_on,
-                     State(SharedEmbassyWifiPicoCore(wifi_core)): State<
-                        SharedEmbassyWifiPicoCore,
-                    >| async move {
-                        wifi_core.lock().await.control.gpio_set(0, led_is_on).await;
-
-                        DebugValue(led_is_on)
-                    },
-                ),
+                ("/set_led", parse_path_segment::<bool>()),
+                get(move |led_is_on: bool| async move {
+                    wifi_core.0.lock().await.control.gpio_set(0, led_is_on).await;
+                    DebugValue(led_is_on)
+                }),
             )
             .route(
                 "/read_sensor",
@@ -171,7 +168,10 @@ async fn main(spawner: Spawner) {
     // And now we can use it!
     blink_n_times(&mut embassy_pico_wifi_core.control, 1).await;
 
-    let app: &'static AppRouter<AppProps> = APP.init(AppProps.build_app());
+    let shared_wifi_core: SharedEmbassyWifiPicoCore =
+        SharedEmbassyWifiPicoCore(WIFI_CORE.init(Mutex::new(embassy_pico_wifi_core)));
+
+    let app: &'static AppRouter<AppProps> = APP.init(AppProps { shared_wifi_core }.build_app());
 
     info!("Starting web server");
 
@@ -184,12 +184,9 @@ async fn main(spawner: Spawner) {
         })
         .keep_connection_alive(),
     );
-
-    let shared_wifi_core: SharedEmbassyWifiPicoCore =
-        SharedEmbassyWifiPicoCore(WIFI_CORE.init(Mutex::new(embassy_pico_wifi_core)));
     let shared_sensor = SharedSensor(SENSOR.init(Mutex::new(DHT22::new(p.PIN_16, Delay))));
     let shared_sensor_state = SharedSensorsState(SENSOR_STATE.init(Mutex::new(SensorState::new())));
-
+    
     // for some reason, idk why, I can only spawn one less than the pool size
     // otherwise it panics
     for id in 1..(WEB_TASK_POOL_SIZE - 3) {
@@ -205,6 +202,8 @@ async fn main(spawner: Spawner) {
             },
         ).unwrap());
     }
+
+    spawner.spawn(wifi_autoheal_task(shared_wifi_core, environment_variables).unwrap());
 
     info!("Web server started");
 }

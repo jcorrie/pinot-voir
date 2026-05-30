@@ -4,12 +4,20 @@
   "lsp": {
     "rust-analyzer": {
       "initialization_options": {
+        "procMacro": {
+          "enable": true,
+        },
+        "check": {
+          "command": "clippy",
+          "allTargets": false,
+          "rust.target": "thumbv7em-none-eabihf",
+        },
         "cargo": {
           "buildScripts": {
-            "enable": true
-          }
-        }
-      }
-    }
-  }
+            "enable": true,
+          },
+        },
+      },
+    },
+  },
 }

@@ -79,6 +79,22 @@ embassy-usb-driver = "0.2.2"
 
 [patch.crates-io]
 embassy-dht = { git = "https://github.com/jcorrie/embassy-dht", branch = "dhtsensor-trait" }
+cyw43 = { git = "https://github.com/embassy-rs/embassy", rev = "9577afe" }
+cyw43-pio = { git = "https://github.com/embassy-rs/embassy", rev = "9577afe" }
+embassy-executor = { git = "https://github.com/embassy-rs/embassy", rev = "9577afe" }
+embassy-time = { git = "https://github.com/embassy-rs/embassy", rev = "9577afe" }
+embassy-time-driver = { git = "https://github.com/embassy-rs/embassy", rev = "9577afe" }
+embassy-sync = { git = "https://github.com/embassy-rs/embassy", rev = "9577afe" }
+embassy-net = { git = "https://github.com/embassy-rs/embassy", rev = "9577afe" }
+embassy-net-driver = { git = "https://github.com/embassy-rs/embassy", rev = "9577afe" }
+embassy-net-driver-channel = { git = "https://github.com/embassy-rs/embassy", rev = "9577afe" }
+embassy-rp = { git = "https://github.com/embassy-rs/embassy", rev = "9577afe" }
+embassy-hal-internal = { git = "https://github.com/embassy-rs/embassy", rev = "9577afe" }
+embassy-embedded-hal = { git = "https://github.com/embassy-rs/embassy", rev = "9577afe" }
+embassy-usb = { git = "https://github.com/embassy-rs/embassy", rev = "9577afe" }
+embassy-usb-driver = { git = "https://github.com/embassy-rs/embassy", rev = "9577afe" }
+embassy-usb-logger = { git = "https://github.com/embassy-rs/embassy", rev = "9577afe" }
+embassy-futures = { git = "https://github.com/embassy-rs/embassy", rev = "9577afe" }
 
 
 [profile.release]

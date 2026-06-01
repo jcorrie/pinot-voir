@@ -23,7 +23,7 @@ bind_interrupts!(struct Irqs {
 pub async fn write_cdc_chunked(
     cdc: &mut CdcAcmClass<'static, Driver<'static, USB>>,
     data: &[u8],
-) -> Result<(), embassy_usb_driver::EndpointError> {
+) -> Result<(), embassy_usb::driver::EndpointError> {
     // CDC full-speed EPs are typically 64 bytes
     let max_packet = 64usize;
     let mut offset = 0usize;
@@ -45,7 +45,7 @@ pub async fn write_cdc_chunked(
 pub fn init_usb(usb: Peri<'static, USB>) -> embassy_usb::Builder<'static, Driver<'static, USB>> {
     let driver = Driver::new(usb, Irqs);
 
-    let mut usb_builder = embassy_usb::Builder::new(
+    let usb_builder = embassy_usb::Builder::new(
         driver,
         {
             let mut cfg = embassy_usb::Config::new(0xc0de, 0xcafe);

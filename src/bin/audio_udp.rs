@@ -8,11 +8,10 @@ use embassy_executor::Executor;
 use embassy_executor::Spawner;
 use embassy_net::udp::{PacketMetadata, UdpSocket};
 use embassy_net::{IpAddress, IpEndpoint};
-use embassy_rp::adc::InterruptHandler as ADCInterruptHandler;
 use embassy_rp::bind_interrupts;
 use embassy_rp::dma;
 use embassy_rp::multicore::{spawn_core1, Stack};
-use embassy_rp::peripherals::{ADC, DMA_CH0, DMA_CH1, PIN_26};
+use embassy_rp::peripherals::DMA_CH1;
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::channel::Channel as SyncChannel;
 use embassy_sync::mutex::Mutex;
@@ -53,7 +52,7 @@ async fn main(spawner: Spawner) {
         move || {
             let executor1 = EXECUTOR1.init(Executor::new());
             executor1.run(|spawner| {
-                unwrap!(spawner.spawn(adc_task(&AUDIO_CHANNEL, p.ADC, p.DMA_CH1, p.PIN_26)));
+                spawner.spawn(adc_task(&AUDIO_CHANNEL, p.ADC, dma::Channel::new(p.DMA_CH1, AudioIrqs), p.PIN_26).unwrap());
             });
         },
     );
@@ -66,23 +65,24 @@ async fn main(spawner: Spawner) {
         p.PIN_29,
         p.PIO0,
         p.DMA_CH0,
+        p.DMA_CH2,
         spawner,
         environment_variables,
     )
     .await;
 
     let shared_wifi_core: SharedEmbassyWifiPicoCore =
-        SharedEmbassyWifiPicoCore(make_static!(Mutex::new(embassy_pico_wifi_core)));
+        SharedEmbassyWifiPicoCore(WIFI_CORE.init(Mutex::new(embassy_pico_wifi_core)));
 
     // ---------- Spawn UDP task ----------
     let target_ip = IpAddress::v4(255, 255, 255, 255);
     let port = 1234;
-    unwrap!(spawner.spawn(udp_tx_task(
+    spawner.spawn(udp_tx_task(
         &AUDIO_CHANNEL,
         shared_wifi_core,
         target_ip,
         port,
-    )));
+    ).unwrap());
 }
 
 /// Task running on Core0: reads AudioBlocks and sends via UDP with proper rate limiting

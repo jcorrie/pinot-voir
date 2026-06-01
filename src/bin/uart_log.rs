@@ -79,7 +79,7 @@ async fn main(spawner: Spawner) {
     let mut cdc = CdcAcmClass::new(&mut usb_builder, STATE.init(State::new()), 64);
     let usb = usb_builder.build();
 
-    spawner.spawn(usb_task(usb)).unwrap();
+    spawner.spawn(usb_task(usb).unwrap());
 
     // ADC setup
     let mut adc = Adc::new(p.ADC, IrqsADC, Config::default());

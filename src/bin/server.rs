@@ -10,6 +10,9 @@
 #![feature(impl_trait_in_assoc_type)]
 use defmt::*;
 use embassy_executor::Spawner;
+use embassy_rp::bind_interrupts;
+use embassy_rp::dma;
+use embassy_rp::peripherals::{DMA_CH0, DMA_CH2};
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, mutex::Mutex};
 use embassy_time::{Delay, Duration};
 use picoserve::extract::Json;
@@ -138,6 +141,10 @@ impl picoserve::extract::FromRef<AppState> for AppState {
     }
 }
 
+bind_interrupts!(struct WifiIrqs {
+    DMA_IRQ_0 => dma::InterruptHandler<DMA_CH0>, dma::InterruptHandler<DMA_CH2>;
+});
+
 static ENV: StaticCell<EnvironmentVariables> = StaticCell::new();
 static APP: StaticCell<AppRouter<AppProps>> = StaticCell::new();
 static CONFIG: StaticCell<picoserve::Config> = StaticCell::new();
@@ -161,8 +168,8 @@ async fn main(spawner: Spawner) {
         p.PIN_25,
         p.PIN_29,
         p.PIO0,
-        p.DMA_CH0,
-        p.DMA_CH2,
+        dma::Channel::new(p.DMA_CH0, WifiIrqs),
+        dma::Channel::new(p.DMA_CH2, WifiIrqs),
         spawner,
         environment_variables,
     )

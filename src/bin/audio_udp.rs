@@ -11,7 +11,7 @@ use embassy_net::{IpAddress, IpEndpoint};
 use embassy_rp::bind_interrupts;
 use embassy_rp::dma;
 use embassy_rp::multicore::{spawn_core1, Stack};
-use embassy_rp::peripherals::DMA_CH1;
+use embassy_rp::peripherals::{DMA_CH0, DMA_CH1, DMA_CH2};
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::channel::Channel as SyncChannel;
 use embassy_sync::mutex::Mutex;
@@ -21,8 +21,8 @@ use pinot_voir::common::shared_functions::EnvironmentVariables;
 use pinot_voir::common::wifi::{EmbassyPicoWifiCore, SharedEmbassyWifiPicoCore};
 use static_cell::StaticCell;
 
-bind_interrupts!(struct AudioIrqs {
-    DMA_IRQ_0 => dma::InterruptHandler<DMA_CH1>;
+bind_interrupts!(struct Irqs {
+    DMA_IRQ_0 => dma::InterruptHandler<DMA_CH0>, dma::InterruptHandler<DMA_CH1>, dma::InterruptHandler<DMA_CH2>;
 });
 
 static WIFI_CORE: StaticCell<Mutex<CriticalSectionRawMutex, pinot_voir::common::wifi::EmbassyPicoWifiCore>> = StaticCell::new();
@@ -52,7 +52,7 @@ async fn main(spawner: Spawner) {
         move || {
             let executor1 = EXECUTOR1.init(Executor::new());
             executor1.run(|spawner| {
-                spawner.spawn(adc_task(&AUDIO_CHANNEL, p.ADC, dma::Channel::new(p.DMA_CH1, AudioIrqs), p.PIN_26).unwrap());
+                spawner.spawn(adc_task(&AUDIO_CHANNEL, p.ADC, dma::Channel::new(p.DMA_CH1, Irqs), p.PIN_26).unwrap());
             });
         },
     );
@@ -64,8 +64,8 @@ async fn main(spawner: Spawner) {
         p.PIN_25,
         p.PIN_29,
         p.PIO0,
-        p.DMA_CH0,
-        p.DMA_CH2,
+        dma::Channel::new(p.DMA_CH0, Irqs),
+        dma::Channel::new(p.DMA_CH2, Irqs),
         spawner,
         environment_variables,
     )

@@ -12,7 +12,7 @@ use embassy_rp::clocks::RoscRng;
 use embassy_rp::gpio::{Level, Output};
 use embassy_rp::Peri;
 use embassy_rp::dma;
-use embassy_rp::peripherals::{DMA_CH0, DMA_CH1, DMA_CH2, PIN_23, PIN_24, PIN_25, PIN_29, PIO0};
+use embassy_rp::peripherals::{PIN_23, PIN_24, PIN_25, PIN_29, PIO0};
 use embassy_rp::pio::{InterruptHandler, Pio};
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, mutex::Mutex};
 use embassy_time::{Duration, Timer};
@@ -23,7 +23,6 @@ pub const WEB_TASK_POOL_SIZE: usize = 12;
 
 bind_interrupts!(pub struct Irqs {
     PIO0_IRQ_0 => InterruptHandler<PIO0>;
-    DMA_IRQ_0 => dma::InterruptHandler<DMA_CH0>, dma::InterruptHandler<DMA_CH1>, dma::InterruptHandler<DMA_CH2>;
 });
 
 #[embassy_executor::task]
@@ -56,8 +55,8 @@ impl EmbassyPicoWifiCore {
         pin_25: Peri<'static, PIN_25>,
         pin_29: Peri<'static, PIN_29>,
         pio_0: Peri<'static, PIO0>,
-        dma_ch0: Peri<'static, DMA_CH0>,
-        dma_ch2: Peri<'static, DMA_CH2>,
+        dma_ch0: dma::Channel<'static>,
+        dma_ch2: dma::Channel<'static>,
         spawner: Spawner,
     ) -> Self {
         let fw = cyw43::aligned_bytes!("../../cyw43-firmware/43439A0.bin");
@@ -76,8 +75,8 @@ impl EmbassyPicoWifiCore {
             cs,
             pin_24,
             pin_29,
-            dma::Channel::new(dma_ch0, Irqs),
-            dma::Channel::new(dma_ch2, Irqs),
+            dma_ch0,
+            dma_ch2,
         );
         static STATE: StaticCell<cyw43::State> = StaticCell::new();
         let state = STATE.init(cyw43::State::new());
@@ -115,8 +114,8 @@ impl EmbassyPicoWifiCore {
         pin_25: Peri<'static, PIN_25>,
         pin_29: Peri<'static, PIN_29>,
         pio0: Peri<'static, PIO0>,
-        dma_ch0: Peri<'static, DMA_CH0>,
-        dma_ch2: Peri<'static, DMA_CH2>,
+        dma_ch0: dma::Channel<'static>,
+        dma_ch2: dma::Channel<'static>,
         spawner: Spawner,
         environment_variables: &EnvironmentVariables,
     ) -> Self {

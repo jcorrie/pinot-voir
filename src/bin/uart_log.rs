@@ -7,17 +7,19 @@ use defmt::info;
 use embassy_executor::Spawner;
 use embassy_rp::adc::{Adc, Channel, Config, InterruptHandler as ADCInterruptHandler};
 use embassy_rp::bind_interrupts;
+use embassy_rp::dma;
 use embassy_rp::gpio::Pull;
-use embassy_rp::peripherals::USB;
+use embassy_rp::peripherals::{DMA_CH0, USB};
 use embassy_rp::usb::{Driver, InterruptHandler as USBInterruptHandler};
 use embassy_usb::UsbDevice;
 use embassy_usb::class::cdc_acm::{CdcAcmClass, State};
-use embassy_usb_driver::EndpointError;
+use embassy_usb::driver::EndpointError;
 use static_cell::StaticCell;
 use {defmt_rtt as _, panic_probe as _};
 
 bind_interrupts!(struct Irqs {
     USBCTRL_IRQ => USBInterruptHandler<USB>;
+    DMA_IRQ_0 => dma::InterruptHandler<DMA_CH0>;
 });
 bind_interrupts!(struct IrqsADC {
     ADC_IRQ_FIFO => ADCInterruptHandler;
@@ -83,7 +85,7 @@ async fn main(spawner: Spawner) {
 
     // ADC setup
     let mut adc = Adc::new(p.ADC, IrqsADC, Config::default());
-    let mut dma = p.DMA_CH0;
+    let mut dma = dma::Channel::new(p.DMA_CH0, Irqs);
     let mut p26 = Channel::new_pin(p.PIN_26, Pull::None);
 
     const BUFFER_SIZE: usize = 1024;
@@ -95,7 +97,7 @@ async fn main(spawner: Spawner) {
         loop {
             let mut audio_buffer: [u16; BUFFER_SIZE] = [0_u16; BUFFER_SIZE];
             if let Ok(_) = adc
-                .read_many(&mut p26, &mut audio_buffer, ADC_DIV, dma.reborrow())
+                .read_many(&mut p26, &mut audio_buffer, ADC_DIV, &mut dma)
                 .await
             {
                 let audio_bytes: &[u8] = bytemuck::cast_slice(&audio_buffer);

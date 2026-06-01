@@ -38,6 +38,7 @@ async fn main(spawner: Spawner) {
         p.PIN_29,
         p.PIO0,
         p.DMA_CH0,
+        p.DMA_CH2,
         spawner,
         environment_variables,
     )

@@ -12,7 +12,7 @@ use embassy_rp::clocks::RoscRng;
 use embassy_rp::gpio::{Level, Output};
 use embassy_rp::Peri;
 use embassy_rp::dma;
-use embassy_rp::peripherals::{DMA_CH0, PIN_23, PIN_24, PIN_25, PIN_29, PIO0};
+use embassy_rp::peripherals::{DMA_CH0, DMA_CH1, DMA_CH2, PIN_23, PIN_24, PIN_25, PIN_29, PIO0};
 use embassy_rp::pio::{InterruptHandler, Pio};
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, mutex::Mutex};
 use embassy_time::{Duration, Timer};
@@ -21,14 +21,14 @@ use static_cell::StaticCell;
 
 pub const WEB_TASK_POOL_SIZE: usize = 12;
 
-bind_interrupts!(struct Irqs {
+bind_interrupts!(pub struct Irqs {
     PIO0_IRQ_0 => InterruptHandler<PIO0>;
-    DMA_IRQ_0 => dma::InterruptHandler<DMA_CH0>;
+    DMA_IRQ_0 => dma::InterruptHandler<DMA_CH0>, dma::InterruptHandler<DMA_CH1>, dma::InterruptHandler<DMA_CH2>;
 });
 
 #[embassy_executor::task]
 async fn wifi_task(
-    runner: cyw43::Runner<'static, cyw43::SpiBus<Output<'static>, PioSpi<'static, PIO0, 0>>>,
+    runner: cyw43::Runner<'static, cyw43::SpiBus<Output<'static>, PioSpi<'static, PIO0, 0>>, cyw43::Cyw43439>,
 ) -> ! {
     runner.run().await
 }
@@ -57,6 +57,7 @@ impl EmbassyPicoWifiCore {
         pin_29: Peri<'static, PIN_29>,
         pio_0: Peri<'static, PIO0>,
         dma_ch0: Peri<'static, DMA_CH0>,
+        dma_ch2: Peri<'static, DMA_CH2>,
         spawner: Spawner,
     ) -> Self {
         let fw = cyw43::aligned_bytes!("../../cyw43-firmware/43439A0.bin");
@@ -76,6 +77,7 @@ impl EmbassyPicoWifiCore {
             pin_24,
             pin_29,
             dma::Channel::new(dma_ch0, Irqs),
+            dma::Channel::new(dma_ch2, Irqs),
         );
         static STATE: StaticCell<cyw43::State> = StaticCell::new();
         let state = STATE.init(cyw43::State::new());
@@ -114,11 +116,12 @@ impl EmbassyPicoWifiCore {
         pin_29: Peri<'static, PIN_29>,
         pio0: Peri<'static, PIO0>,
         dma_ch0: Peri<'static, DMA_CH0>,
+        dma_ch2: Peri<'static, DMA_CH2>,
         spawner: Spawner,
         environment_variables: &EnvironmentVariables,
     ) -> Self {
         let mut embassy_pico_wifi_core =
-            EmbassyPicoWifiCore::new(pin_23, pin_24, pin_25, pin_29, pio0, dma_ch0, spawner).await;
+            EmbassyPicoWifiCore::new(pin_23, pin_24, pin_25, pin_29, pio0, dma_ch0, dma_ch2, spawner).await;
 
         let successful_join = embassy_pico_wifi_core
             .join_wpa2_network(

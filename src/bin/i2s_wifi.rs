@@ -52,7 +52,9 @@ async fn main(spawner: Spawner) {
     let p = embassy_rp::init(Default::default());
 
     // Build the I2S driver here so the binding (Irqs) is local to this binary.
-    let Pio { mut common, sm0, .. } = Pio::new(p.PIO1, Irqs);
+    let Pio {
+        mut common, sm0, ..
+    } = Pio::new(p.PIO1, Irqs);
     let program = PioI2sInProgram::new(&mut common);
     let i2s = PioI2sIn::new(
         &mut common,
@@ -95,13 +97,14 @@ async fn main(spawner: Spawner) {
     )
     .await;
 
+    info!("core0 started");
     let shared_wifi_core: SharedEmbassyWifiPicoCore =
         SharedEmbassyWifiPicoCore(WIFI_CORE.init(Mutex::new(embassy_pico_wifi_core)));
 
+    info!("shared core  started");
     let target_ip = IpAddress::v4(255, 255, 255, 255);
     let port = 1234;
-    spawner
-        .spawn(udp_tx_task(&AUDIO_CHANNEL, shared_wifi_core, target_ip, port).unwrap());
+    spawner.spawn(udp_tx_task(&AUDIO_CHANNEL, shared_wifi_core, target_ip, port).unwrap());
 }
 
 #[embassy_executor::task]
@@ -111,6 +114,7 @@ async fn udp_tx_task(
     target_ip: IpAddress,
     port: u16,
 ) -> ! {
+    info!("About to start udp");
     let mut rx_buffer = [0; 1024];
     let mut tx_buffer = [0; 1024];
     let mut rx_meta = [PacketMetadata::EMPTY; 16];
@@ -159,12 +163,19 @@ async fn udp_tx_task(
         if elapsed < BLOCK_DURATION_MICROS {
             Timer::after_micros(BLOCK_DURATION_MICROS - elapsed).await;
         } else {
-            info!("Processing took {}µs, expected {}µs", elapsed, BLOCK_DURATION_MICROS);
+            info!(
+                "Processing took {}µs, expected {}µs",
+                elapsed, BLOCK_DURATION_MICROS
+            );
         }
 
         if stats_timer.elapsed() >= Duration::from_secs(2) {
             let total = blocks_ok + blocks_err;
-            let pct = if total == 0 { 100.0 } else { (blocks_ok as f32 / total as f32) * 100.0 };
+            let pct = if total == 0 {
+                100.0
+            } else {
+                (blocks_ok as f32 / total as f32) * 100.0
+            };
             info!("UDP: {} ok, {} err ({}% ok)", blocks_ok, blocks_err, pct);
             stats_timer = Instant::now();
         }

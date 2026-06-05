@@ -19,16 +19,13 @@ use embassy_time::{Duration, Instant, Timer};
 use pinot_voir::common::adc_microphone::adc_task;
 use pinot_voir::common::audio::{AudioBlock, BUFFER_SIZE};
 use pinot_voir::common::shared_functions::EnvironmentVariables;
-use pinot_voir::common::wifi::{EmbassyPicoWifiCore, Irqs, SharedEmbassyWifiPicoCore};
+use pinot_voir::common::wifi::{EmbassyPicoWifiCore, SharedEmbassyWifiPicoCore};
 use static_cell::StaticCell;
 
 bind_interrupts!(struct Irqs {
     DMA_IRQ_0 => dma::InterruptHandler<DMA_CH0>, dma::InterruptHandler<DMA_CH1>, dma::InterruptHandler<DMA_CH2>;
 });
 
-static WIFI_CORE: StaticCell<
-    Mutex<CriticalSectionRawMutex, pinot_voir::common::wifi::EmbassyPicoWifiCore>,
-> = StaticCell::new();
 use {defmt_rtt as _, panic_probe as _};
 
 // ---------- Executors / Core stacks ----------

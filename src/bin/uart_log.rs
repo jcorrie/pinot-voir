@@ -24,9 +24,6 @@ bind_interrupts!(struct Irqs {
 bind_interrupts!(struct IrqsADC {
     ADC_IRQ_FIFO => ADCInterruptHandler;
 });
-bind_interrupts!(struct IrqsDMA {
-    DMA_IRQ_0 => dma::InterruptHandler<DMA_CH0>;
-});
 
 async fn write_cdc_chunked<'a>(
     cdc: &mut CdcAcmClass<'static, Driver<'static, USB>>,

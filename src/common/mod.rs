@@ -11,3 +11,8 @@ pub mod supabase;
 pub mod adc_microphone;
 
 pub mod usb;
+
+
+pub mod i2s_microphone;
+
+pub mod audio;

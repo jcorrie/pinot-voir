@@ -1,37 +1,40 @@
-use crate::common::shared_functions::{EnvironmentVariables, blink_n_times};
+use crate::common::shared_functions::{blink_n_times, EnvironmentVariables};
 
 use cyw43::Control;
 use cyw43::JoinOptions;
-use cyw43_pio::{DEFAULT_CLOCK_DIVIDER, PioSpi};
+use cyw43_pio::{PioSpi, DEFAULT_CLOCK_DIVIDER};
 use defmt::info;
 use embassy_executor::Spawner;
 use embassy_net::dns::DnsQueryType;
 use embassy_net::{Config, Stack, StackResources};
 use embassy_rp::bind_interrupts;
 use embassy_rp::clocks::RoscRng;
-use embassy_rp::gpio::{Level, Output};
-use embassy_rp::Peri;
 use embassy_rp::dma;
-use embassy_rp::peripherals::{DMA_CH0, DMA_CH1, PIN_23, PIN_24, PIN_25, PIN_29, PIO0};
+use embassy_rp::gpio::{Level, Output};
+use embassy_rp::peripherals::{PIN_23, PIN_24, PIN_25, PIN_29, PIO0};
 use embassy_rp::pio::{InterruptHandler, Pio};
+use embassy_rp::Peri;
+use embassy_sync::signal::Signal;
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, mutex::Mutex};
 use embassy_time::{Duration, Timer};
 use reqwless::client::TlsConfig;
 use static_cell::StaticCell;
 
+pub static WIFI_RECONNECTED: Signal<CriticalSectionRawMutex, ()> = Signal::new();
+
 pub const WEB_TASK_POOL_SIZE: usize = 12;
 
-// Shared interrupt bindings for the whole project. DMA_IRQ_0 is used by both
-// the WiFi SPI (DMA_CH0) and the ADC audio path (DMA_CH1); only one handler
-// for DMA_IRQ_0 may exist per binary, so we centralise it here.
 bind_interrupts!(pub struct Irqs {
     PIO0_IRQ_0 => InterruptHandler<PIO0>;
-    DMA_IRQ_0 => dma::InterruptHandler<DMA_CH0>, dma::InterruptHandler<DMA_CH1>;
 });
 
 #[embassy_executor::task]
 async fn wifi_task(
-    runner: cyw43::Runner<'static, cyw43::SpiBus<Output<'static>, PioSpi<'static, PIO0, 0>>>,
+    runner: cyw43::Runner<
+        'static,
+        cyw43::SpiBus<Output<'static>, PioSpi<'static, PIO0, 0>>,
+        cyw43::Cyw43439,
+    >,
 ) -> ! {
     runner.run().await
 }
@@ -59,7 +62,8 @@ impl EmbassyPicoWifiCore {
         pin_25: Peri<'static, PIN_25>,
         pin_29: Peri<'static, PIN_29>,
         pio_0: Peri<'static, PIO0>,
-        dma_ch0: Peri<'static, DMA_CH0>,
+        dma_ch0: dma::Channel<'static>,
+        dma_ch2: dma::Channel<'static>,
         spawner: Spawner,
     ) -> Self {
         let fw = cyw43::aligned_bytes!("../../cyw43-firmware/43439A0.bin");
@@ -78,7 +82,8 @@ impl EmbassyPicoWifiCore {
             cs,
             pin_24,
             pin_29,
-            dma::Channel::new(dma_ch0, Irqs),
+            dma_ch0,
+            dma_ch2,
         );
         static STATE: StaticCell<cyw43::State> = StaticCell::new();
         let state = STATE.init(cyw43::State::new());
@@ -116,12 +121,15 @@ impl EmbassyPicoWifiCore {
         pin_25: Peri<'static, PIN_25>,
         pin_29: Peri<'static, PIN_29>,
         pio0: Peri<'static, PIO0>,
-        dma_ch0: Peri<'static, DMA_CH0>,
+        dma_ch0: dma::Channel<'static>,
+        dma_ch2: dma::Channel<'static>,
         spawner: Spawner,
         environment_variables: &EnvironmentVariables,
     ) -> Self {
-        let mut embassy_pico_wifi_core =
-            EmbassyPicoWifiCore::new(pin_23, pin_24, pin_25, pin_29, pio0, dma_ch0, spawner).await;
+        let mut embassy_pico_wifi_core = EmbassyPicoWifiCore::new(
+            pin_23, pin_24, pin_25, pin_29, pio0, dma_ch0, dma_ch2, spawner,
+        )
+        .await;
 
         let successful_join = embassy_pico_wifi_core
             .join_wpa2_network(
@@ -225,7 +233,11 @@ pub async fn wifi_autoheal_task(
                 .join_wpa2_network(env.wifi_ssid, env.wifi_password)
                 .await
             {
-                Ok(_) => info!("Rejoined WiFi."),
+                Ok(_) => {
+                    info!("Rejoined WiFi.");
+                    // in wifi_autoheal_task, after successfully rejoining:
+                    WIFI_RECONNECTED.signal(());
+                }
                 Err(e) => info!("WiFi rejoin failed: {:?}", e),
             }
         } else {

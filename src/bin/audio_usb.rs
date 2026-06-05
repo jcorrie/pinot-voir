@@ -1,22 +1,25 @@
 #![no_std]
 #![no_main]
-#![feature(type_alias_impl_trait)]
-#![feature(impl_trait_in_assoc_type)]
 
-use defmt::*;
 use embassy_executor::Executor;
+use embassy_rp::bind_interrupts;
 use embassy_rp::dma;
-use embassy_rp::multicore::{Stack, spawn_core1};
-use embassy_rp::peripherals::USB;
+use embassy_rp::multicore::{spawn_core1, Stack};
+use embassy_rp::peripherals::{DMA_CH1, USB};
 use embassy_rp::usb::Driver;
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::channel::Channel as SyncChannel;
 use embassy_usb::class::cdc_acm::{CdcAcmClass, State as CdcState};
-use pinot_voir::common::adc_microphone::{AudioBlock, adc_task};
+use pinot_voir::common::adc_microphone::adc_task;
+use pinot_voir::common::audio::AudioBlock;
 use pinot_voir::common::usb::{cdc_tx_task, init_usb, usb_device_task};
 use pinot_voir::common::wifi::Irqs;
 use static_cell::StaticCell;
 use {defmt_rtt as _, panic_probe as _};
+
+bind_interrupts!(struct Irqs {
+    DMA_IRQ_0 => dma::InterruptHandler<DMA_CH1>;
+});
 
 // ---------- Executors / Core stacks ----------
 static mut CORE1_STACK: Stack<4096> = Stack::new();

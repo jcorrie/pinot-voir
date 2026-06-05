@@ -13,12 +13,13 @@ use embassy_rp::peripherals::{DMA_CH0, USB};
 use embassy_rp::usb::{Driver, InterruptHandler as USBInterruptHandler};
 use embassy_usb::UsbDevice;
 use embassy_usb::class::cdc_acm::{CdcAcmClass, State};
-use embassy_usb_driver::EndpointError;
+use embassy_usb::driver::EndpointError;
 use static_cell::StaticCell;
 use {defmt_rtt as _, panic_probe as _};
 
 bind_interrupts!(struct Irqs {
     USBCTRL_IRQ => USBInterruptHandler<USB>;
+    DMA_IRQ_0 => dma::InterruptHandler<DMA_CH0>;
 });
 bind_interrupts!(struct IrqsADC {
     ADC_IRQ_FIFO => ADCInterruptHandler;
@@ -81,7 +82,7 @@ async fn main(spawner: Spawner) {
 
     // ADC setup
     let mut adc = Adc::new(p.ADC, IrqsADC, Config::default());
-    let mut dma = dma::Channel::new(p.DMA_CH0, IrqsDMA);
+    let mut dma = dma::Channel::new(p.DMA_CH0, Irqs);
     let mut p26 = Channel::new_pin(p.PIN_26, Pull::None);
 
     const BUFFER_SIZE: usize = 1024;

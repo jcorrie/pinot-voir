@@ -2,6 +2,7 @@
 name = "pinot_voir"
 version = "0.1.0"
 edition = "2021"
+autobins = false
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [dependencies]
@@ -75,10 +76,27 @@ bytemuck = "1.23.2"
 embassy-usb-logger = "0.6.0"
 embassy-usb = { version = "0.6.0", features = ["defmt"] }
 log = "0.4.27"
-embassy-usb-driver = "0.2.2"
+embassy-usb-driver = "0.2.1"
+embassy-futures = "0.1.2"
 
 [patch.crates-io]
 embassy-dht = { git = "https://github.com/jcorrie/embassy-dht", branch = "dhtsensor-trait" }
+cyw43 = { git = "https://github.com/embassy-rs/embassy", rev = "9577afe" }
+cyw43-pio = { git = "https://github.com/embassy-rs/embassy", rev = "9577afe" }
+embassy-executor = { git = "https://github.com/embassy-rs/embassy", rev = "9577afe" }
+embassy-time = { git = "https://github.com/embassy-rs/embassy", rev = "9577afe" }
+embassy-time-driver = { git = "https://github.com/embassy-rs/embassy", rev = "9577afe" }
+embassy-sync = { git = "https://github.com/embassy-rs/embassy", rev = "9577afe" }
+embassy-net = { git = "https://github.com/embassy-rs/embassy", rev = "9577afe" }
+embassy-net-driver = { git = "https://github.com/embassy-rs/embassy", rev = "9577afe" }
+embassy-net-driver-channel = { git = "https://github.com/embassy-rs/embassy", rev = "9577afe" }
+embassy-rp = { git = "https://github.com/embassy-rs/embassy", rev = "9577afe" }
+embassy-hal-internal = { git = "https://github.com/embassy-rs/embassy", rev = "9577afe" }
+embassy-embedded-hal = { git = "https://github.com/embassy-rs/embassy", rev = "9577afe" }
+embassy-usb = { git = "https://github.com/embassy-rs/embassy", rev = "9577afe" }
+embassy-usb-driver = { git = "https://github.com/embassy-rs/embassy", rev = "9577afe" }
+embassy-usb-logger = { git = "https://github.com/embassy-rs/embassy", rev = "9577afe" }
+embassy-futures = { git = "https://github.com/embassy-rs/embassy", rev = "9577afe" }
 
 
 [profile.release]
@@ -151,6 +169,14 @@ bench = false
 [[bin]]
 name = "audio_udp"
 path = "src/bin/audio_udp.rs"
+test = false
+doctest = false
+bench = false
+
+
+[[bin]]
+name = "i2s_wifi"
+path = "src/bin/i2s_wifi.rs"
 test = false
 doctest = false
 bench = false

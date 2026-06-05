@@ -25,13 +25,10 @@ async fn main(spawner: Spawner) {
     let k = 1.003;
 
     spawner.spawn(toggle_led(CHANNEL.sender(), Duration::from_nanos(dt)).unwrap());
-    spawner.spawn(
-        toggle_led(
-            CHANNEL.sender(),
-            Duration::from_nanos((dt as f64 * k) as u64),
-        )
-        .unwrap(),
-    );
+    spawner.spawn(toggle_led(
+        CHANNEL.sender(),
+        Duration::from_nanos((dt as f64 * k) as u64),
+    ).unwrap());
 
     loop {
         match CHANNEL.receive().await {

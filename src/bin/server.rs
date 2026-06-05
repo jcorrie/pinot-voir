@@ -9,11 +9,12 @@
 #![feature(impl_trait_in_assoc_type)]
 use defmt::*;
 use embassy_executor::Spawner;
+use embassy_futures::select::select;
 use embassy_rp::bind_interrupts;
 use embassy_rp::dma;
 use embassy_rp::peripherals::{DMA_CH0, DMA_CH2};
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, mutex::Mutex};
-use embassy_time::{Delay, Duration};
+use embassy_time::{Delay, Duration, Timer};
 use picoserve::extract::Json;
 use picoserve::extract::State;
 use pinot_voir::common::dht22_tools::DHT22;
@@ -21,6 +22,7 @@ use pinot_voir::common::sensor_tools::SensorState;
 use pinot_voir::common::shared_functions::{blink_n_times, EnvironmentVariables};
 use pinot_voir::common::wifi::{
     wifi_autoheal_task, EmbassyPicoWifiCore, SharedEmbassyWifiPicoCore, WEB_TASK_POOL_SIZE,
+    WIFI_RECONNECTED,
 };
 
 use picoserve::{
@@ -49,7 +51,13 @@ impl AppWithStateBuilder for AppProps {
                 ("/set_led", parse_path_segment::<bool>()),
                 get(move |led_is_on: bool| async move {
                     info!("set_led handler called: {}", led_is_on);
-                    wifi_core.0.lock().await.control.gpio_set(0, led_is_on).await;
+                    wifi_core
+                        .0
+                        .lock()
+                        .await
+                        .control
+                        .gpio_set(0, led_is_on)
+                        .await;
                     info!("set_led gpio_set done");
                     DebugValue(led_is_on)
                 }),
@@ -94,10 +102,18 @@ async fn web_task(
 
     let app_shared = app.shared();
     let app_with_state = app_shared.with_state(&state);
-    picoserve::Server::new(&app_with_state, config, &mut http_buffer)
-        .listen_and_serve(id, stack, port, &mut tcp_rx_buffer, &mut tcp_tx_buffer)
-        .await
-        .into_never()
+    loop {
+        let serve = picoserve::Server::new(&app_with_state, config, &mut http_buffer)
+            .listen_and_serve(id, stack, port, &mut tcp_rx_buffer, &mut tcp_tx_buffer);
+        select(
+            serve,
+            WIFI_RECONNECTED.wait(), // fires when WiFi reconnects
+        )
+        .await;
+
+        // Signal fired or serve returned — loop restarts with a fresh socket
+        Timer::after_millis(500).await; // brief pause before rebinding
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -195,21 +211,24 @@ async fn main(spawner: Spawner) {
     );
     let shared_sensor = SharedSensor(SENSOR.init(Mutex::new(DHT22::new(p.PIN_16, Delay))));
     let shared_sensor_state = SharedSensorsState(SENSOR_STATE.init(Mutex::new(SensorState::new())));
-    
+
     // for some reason, idk why, I can only spawn one less than the pool size
     // otherwise it panics
     for id in 1..(WEB_TASK_POOL_SIZE - 3) {
-        spawner.spawn(web_task(
-            id,
-            shared_wifi_core.0.lock().await.stack,
-            app,
-            config,
-            AppState {
-                shared_wifi_core,
-                shared_sensor: shared_sensor.clone(),
-                shared_sensor_state,
-            },
-        ).unwrap());
+        spawner.spawn(
+            web_task(
+                id,
+                shared_wifi_core.0.lock().await.stack,
+                app,
+                config,
+                AppState {
+                    shared_wifi_core,
+                    shared_sensor: shared_sensor.clone(),
+                    shared_sensor_state,
+                },
+            )
+            .unwrap(),
+        );
     }
 
     spawner.spawn(wifi_autoheal_task(shared_wifi_core, environment_variables).unwrap());

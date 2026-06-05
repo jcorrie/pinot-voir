@@ -1,23 +1,26 @@
-use crate::common::shared_functions::{EnvironmentVariables, blink_n_times};
+use crate::common::shared_functions::{blink_n_times, EnvironmentVariables};
 
 use cyw43::Control;
 use cyw43::JoinOptions;
-use cyw43_pio::{DEFAULT_CLOCK_DIVIDER, PioSpi};
+use cyw43_pio::{PioSpi, DEFAULT_CLOCK_DIVIDER};
 use defmt::info;
 use embassy_executor::Spawner;
 use embassy_net::dns::DnsQueryType;
 use embassy_net::{Config, Stack, StackResources};
 use embassy_rp::bind_interrupts;
 use embassy_rp::clocks::RoscRng;
-use embassy_rp::gpio::{Level, Output};
-use embassy_rp::Peri;
 use embassy_rp::dma;
+use embassy_rp::gpio::{Level, Output};
 use embassy_rp::peripherals::{PIN_23, PIN_24, PIN_25, PIN_29, PIO0};
 use embassy_rp::pio::{InterruptHandler, Pio};
+use embassy_rp::Peri;
+use embassy_sync::signal::Signal;
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, mutex::Mutex};
 use embassy_time::{Duration, Timer};
 use reqwless::client::TlsConfig;
 use static_cell::StaticCell;
+
+pub static WIFI_RECONNECTED: Signal<CriticalSectionRawMutex, ()> = Signal::new();
 
 pub const WEB_TASK_POOL_SIZE: usize = 12;
 
@@ -27,7 +30,11 @@ bind_interrupts!(pub struct Irqs {
 
 #[embassy_executor::task]
 async fn wifi_task(
-    runner: cyw43::Runner<'static, cyw43::SpiBus<Output<'static>, PioSpi<'static, PIO0, 0>>, cyw43::Cyw43439>,
+    runner: cyw43::Runner<
+        'static,
+        cyw43::SpiBus<Output<'static>, PioSpi<'static, PIO0, 0>>,
+        cyw43::Cyw43439,
+    >,
 ) -> ! {
     runner.run().await
 }
@@ -119,8 +126,10 @@ impl EmbassyPicoWifiCore {
         spawner: Spawner,
         environment_variables: &EnvironmentVariables,
     ) -> Self {
-        let mut embassy_pico_wifi_core =
-            EmbassyPicoWifiCore::new(pin_23, pin_24, pin_25, pin_29, pio0, dma_ch0, dma_ch2, spawner).await;
+        let mut embassy_pico_wifi_core = EmbassyPicoWifiCore::new(
+            pin_23, pin_24, pin_25, pin_29, pio0, dma_ch0, dma_ch2, spawner,
+        )
+        .await;
 
         let successful_join = embassy_pico_wifi_core
             .join_wpa2_network(
@@ -224,7 +233,11 @@ pub async fn wifi_autoheal_task(
                 .join_wpa2_network(env.wifi_ssid, env.wifi_password)
                 .await
             {
-                Ok(_) => info!("Rejoined WiFi."),
+                Ok(_) => {
+                    info!("Rejoined WiFi.");
+                    // in wifi_autoheal_task, after successfully rejoining:
+                    WIFI_RECONNECTED.signal(());
+                }
                 Err(e) => info!("WiFi rejoin failed: {:?}", e),
             }
         } else {

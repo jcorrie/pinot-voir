@@ -8,38 +8,35 @@ use embassy_executor::Executor;
 use embassy_executor::Spawner;
 use embassy_net::udp::{PacketMetadata, UdpSocket};
 use embassy_net::{IpAddress, IpEndpoint};
+
 use embassy_rp::bind_interrupts;
 use embassy_rp::dma;
 use embassy_rp::multicore::{spawn_core1, Stack};
-use embassy_rp::peripherals::{DMA_CH0, DMA_CH1, DMA_CH2};
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::channel::Channel as SyncChannel;
 use embassy_sync::mutex::Mutex;
 use embassy_time::{Duration, Instant, Timer};
-use pinot_voir::common::adc_microphone::adc_task;
-use pinot_voir::common::audio::{AudioBlock, BUFFER_SIZE};
+use pinot_voir::common::i2s_microphone::{i2s_mic_task, BUFFER_SIZE, SAMPLE_RATE};
+use pinot_voir::common::audio::AudioBlock;
 use pinot_voir::common::shared_functions::EnvironmentVariables;
-use pinot_voir::common::wifi::{EmbassyPicoWifiCore, SharedEmbassyWifiPicoCore};
+use pinot_voir::common::wifi::{EmbassyPicoWifiCore, Irqs, SharedEmbassyWifiPicoCore};
+
+use embassy_rp::peripherals::{DMA_CH0, DMA_CH2};
 use static_cell::StaticCell;
-
-bind_interrupts!(struct Irqs {
-    DMA_IRQ_0 => dma::InterruptHandler<DMA_CH0>, dma::InterruptHandler<DMA_CH1>, dma::InterruptHandler<DMA_CH2>;
-});
-
-static WIFI_CORE: StaticCell<
-    Mutex<CriticalSectionRawMutex, pinot_voir::common::wifi::EmbassyPicoWifiCore>,
-> = StaticCell::new();
 use {defmt_rtt as _, panic_probe as _};
 
 // ---------- Executors / Core stacks ----------
 static mut CORE1_STACK: Stack<4096> = Stack::new();
-static EXECUTOR0: StaticCell<Executor> = StaticCell::new();
 static EXECUTOR1: StaticCell<Executor> = StaticCell::new();
 
 // ---------- Audio channel ----------
 static AUDIO_CHANNEL: SyncChannel<CriticalSectionRawMutex, AudioBlock, 4> = SyncChannel::new();
-
+bind_interrupts!(struct WifiIrqs {
+    DMA_IRQ_0 => dma::InterruptHandler<DMA_CH0>, dma::InterruptHandler<DMA_CH2>;
+});
 static ENV: StaticCell<EnvironmentVariables> = StaticCell::new();
+static WIFI_CORE: StaticCell<Mutex<CriticalSectionRawMutex, EmbassyPicoWifiCore>> =
+    StaticCell::new();
 
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
@@ -55,28 +52,20 @@ async fn main(spawner: Spawner) {
         move || {
             let executor1 = EXECUTOR1.init(Executor::new());
             executor1.run(|spawner| {
-                spawner.spawn(
-                    adc_task(
-                        &AUDIO_CHANNEL,
-                        p.ADC,
-                        dma::Channel::new(p.DMA_CH1, Irqs),
-                        p.PIN_26,
-                    )
-                    .unwrap(),
-                );
+                spawner.spawn(i2s_mic_task(&AUDIO_CHANNEL).unwrap());
             });
         },
     );
 
     // ---------- Core0: Connect Wi-Fi asynchronously ----------
-    let mut embassy_pico_wifi_core = EmbassyPicoWifiCore::connect_to_network(
+    let embassy_pico_wifi_core = EmbassyPicoWifiCore::connect_to_network(
         p.PIN_23,
         p.PIN_24,
         p.PIN_25,
         p.PIN_29,
         p.PIO0,
-        dma::Channel::new(p.DMA_CH0, Irqs),
-        dma::Channel::new(p.DMA_CH2, Irqs),
+        dma::Channel::new(p.DMA_CH0, WifiIrqs),
+        dma::Channel::new(p.DMA_CH2, WifiIrqs),
         spawner,
         environment_variables,
     )
@@ -120,8 +109,7 @@ async fn udp_tx_task(
 
     // Calculate the exact timing for each audio block
     // 512 samples at 44100 Hz = 11.61ms per block
-    const SAMPLE_RATE_HZ: u32 = 44100;
-    const BLOCK_DURATION_MICROS: u64 = (BUFFER_SIZE as u64 * 1_000_000) / SAMPLE_RATE_HZ as u64;
+    const BLOCK_DURATION_MICROS: u64 = (BUFFER_SIZE as u64 * 1_000_000) / SAMPLE_RATE as u64;
 
     info!(
         "UDP task: Block duration = {} microseconds",
@@ -148,7 +136,6 @@ async fn udp_tx_task(
             );
         }
 
-        block.centre_samples();
         let bytes: &[u8] = bytemuck::cast_slice(&block.samples);
 
         // Send the audio block
@@ -168,7 +155,6 @@ async fn udp_tx_task(
             let wait_time = BLOCK_DURATION_MICROS - processing_time.as_micros();
             Timer::after_micros(wait_time).await;
         } else {
-            // If processing took longer than expected, log a warning but don't wait
             info!(
                 "Processing took {}μs, expected {}μs",
                 processing_time.as_micros(),

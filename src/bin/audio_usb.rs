@@ -4,13 +4,14 @@
 use embassy_executor::Executor;
 use embassy_rp::bind_interrupts;
 use embassy_rp::dma;
-use embassy_rp::multicore::{Stack, spawn_core1};
+use embassy_rp::multicore::{spawn_core1, Stack};
 use embassy_rp::peripherals::{DMA_CH1, USB};
 use embassy_rp::usb::Driver;
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::channel::Channel as SyncChannel;
 use embassy_usb::class::cdc_acm::{CdcAcmClass, State as CdcState};
-use pinot_voir::common::adc_microphone::{AudioBlock, adc_task};
+use pinot_voir::common::adc_microphone::adc_task;
+use pinot_voir::common::audio::AudioBlock;
 use pinot_voir::common::usb::{cdc_tx_task, init_usb, usb_device_task};
 use static_cell::StaticCell;
 use {defmt_rtt as _, panic_probe as _};
@@ -43,12 +44,15 @@ fn main() -> ! {
         move || {
             let executor1 = EXECUTOR1.init(Executor::new());
             executor1.run(|spawner| {
-                spawner.spawn(adc_task(
-                    &AUDIO_CHANNEL,
-                    p.ADC,
-                    dma::Channel::new(p.DMA_CH1, Irqs),
-                    p.PIN_26,
-                ).unwrap());
+                spawner.spawn(
+                    adc_task(
+                        &AUDIO_CHANNEL,
+                        p.ADC,
+                        dma::Channel::new(p.DMA_CH1, Irqs),
+                        p.PIN_26,
+                    )
+                    .unwrap(),
+                );
             });
         },
     );

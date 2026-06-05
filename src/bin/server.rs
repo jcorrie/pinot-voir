@@ -5,7 +5,6 @@
 #![no_std]
 #![no_main]
 #![allow(async_fn_in_trait)]
-#![allow(non_exhaustive_patterns)] // LSP false positive from #[embassy_executor::main]
 #![feature(type_alias_impl_trait)]
 #![feature(impl_trait_in_assoc_type)]
 use defmt::*;

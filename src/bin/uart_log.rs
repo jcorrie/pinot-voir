@@ -11,9 +11,9 @@ use embassy_rp::dma;
 use embassy_rp::gpio::Pull;
 use embassy_rp::peripherals::{DMA_CH0, USB};
 use embassy_rp::usb::{Driver, InterruptHandler as USBInterruptHandler};
-use embassy_usb::UsbDevice;
 use embassy_usb::class::cdc_acm::{CdcAcmClass, State};
 use embassy_usb::driver::EndpointError;
+use embassy_usb::UsbDevice;
 use static_cell::StaticCell;
 use {defmt_rtt as _, panic_probe as _};
 
@@ -23,9 +23,6 @@ bind_interrupts!(struct Irqs {
 });
 bind_interrupts!(struct IrqsADC {
     ADC_IRQ_FIFO => ADCInterruptHandler;
-});
-bind_interrupts!(struct IrqsDMA {
-    DMA_IRQ_0 => dma::InterruptHandler<DMA_CH0>;
 });
 
 async fn write_cdc_chunked<'a>(

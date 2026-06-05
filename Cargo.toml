@@ -119,8 +119,8 @@ bench = false
 
 
 [[bin]]
-name = "blink"
-path = "src/bin/blink.rs"
+name = "pio_blink"
+path = "src/bin/pio_blink.rs"
 test = false
 doctest = false
 bench = false

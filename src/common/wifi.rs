@@ -218,30 +218,32 @@ pub async fn wifi_autoheal_task(
     const RECONNECT_DELAY: Duration = Duration::from_secs(30);
 
     loop {
-        info!("Checking WiFi connection status...");
-        let mut wifi_core = shared_wifi_core.0.lock().await;
+        {
+            info!("Checking WiFi connection status...");
+            let mut wifi_core = shared_wifi_core.0.lock().await;
 
-        // The most reliable way to test active connection is to poll google
-        let ping_google_result = wifi_core
-            .stack
-            .dns_query("google.com", DnsQueryType::A)
-            .await;
+            // The most reliable way to test active connection is to poll google
+            let ping_google_result = wifi_core
+                .stack
+                .dns_query("google.com", DnsQueryType::A)
+                .await;
 
-        if ping_google_result.is_err() {
-            info!("WiFi link down, attempting reconnection...");
-            match wifi_core
-                .join_wpa2_network(env.wifi_ssid, env.wifi_password)
-                .await
-            {
-                Ok(_) => {
-                    info!("Rejoined WiFi.");
-                    // in wifi_autoheal_task, after successfully rejoining:
-                    WIFI_RECONNECTED.signal(());
+            if ping_google_result.is_err() {
+                info!("WiFi link down, attempting reconnection...");
+                match wifi_core
+                    .join_wpa2_network(env.wifi_ssid, env.wifi_password)
+                    .await
+                {
+                    Ok(_) => {
+                        info!("Rejoined WiFi.");
+                        // in wifi_autoheal_task, after successfully rejoining:
+                        WIFI_RECONNECTED.signal(());
+                    }
+                    Err(e) => info!("WiFi rejoin failed: {:?}", e),
                 }
-                Err(e) => info!("WiFi rejoin failed: {:?}", e),
+            } else {
+                info!("WiFi is connected");
             }
-        } else {
-            info!("WiFi is connected");
         }
         Timer::after(RECONNECT_DELAY).await;
     }

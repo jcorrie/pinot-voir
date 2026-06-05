@@ -19,7 +19,7 @@ use embassy_time::{Duration, Instant, Timer};
 use pinot_voir::common::adc_microphone::adc_task;
 use pinot_voir::common::audio::{AudioBlock, BUFFER_SIZE};
 use pinot_voir::common::shared_functions::EnvironmentVariables;
-use pinot_voir::common::wifi::{EmbassyPicoWifiCore, SharedEmbassyWifiPicoCore};
+use pinot_voir::common::wifi::{EmbassyPicoWifiCore, Irqs, SharedEmbassyWifiPicoCore};
 use static_cell::StaticCell;
 
 bind_interrupts!(struct Irqs {
@@ -33,13 +33,14 @@ use {defmt_rtt as _, panic_probe as _};
 
 // ---------- Executors / Core stacks ----------
 static mut CORE1_STACK: Stack<4096> = Stack::new();
-static EXECUTOR0: StaticCell<Executor> = StaticCell::new();
 static EXECUTOR1: StaticCell<Executor> = StaticCell::new();
 
 // ---------- Audio channel ----------
 static AUDIO_CHANNEL: SyncChannel<CriticalSectionRawMutex, AudioBlock, 4> = SyncChannel::new();
 
 static ENV: StaticCell<EnvironmentVariables> = StaticCell::new();
+static WIFI_CORE: StaticCell<Mutex<CriticalSectionRawMutex, EmbassyPicoWifiCore>> =
+    StaticCell::new();
 
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
@@ -69,7 +70,7 @@ async fn main(spawner: Spawner) {
     );
 
     // ---------- Core0: Connect Wi-Fi asynchronously ----------
-    let mut embassy_pico_wifi_core = EmbassyPicoWifiCore::connect_to_network(
+    let embassy_pico_wifi_core = EmbassyPicoWifiCore::connect_to_network(
         p.PIN_23,
         p.PIN_24,
         p.PIN_25,

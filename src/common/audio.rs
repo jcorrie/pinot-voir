@@ -29,9 +29,10 @@ impl AudioBlock {
         self.samples = samples;
     }
 
-    pub fn update_samples_from_u32(&mut self, samples: [u32; BUFFER_SIZE]) {
-        let samples = samples.map(|x| ((x as i32) >> 16) as i16);
-        self.samples = samples;
+    pub fn update_samples_from_u32(&mut self, samples: &[u32; BUFFER_SIZE]) {
+        for (dst, &src) in self.samples.iter_mut().zip(samples.iter()) {
+            *dst = ((src as i32) >> 16) as i16;
+        }
     }
     pub fn centre_samples(&mut self) {
         self.samples = self.samples.map(|x| {

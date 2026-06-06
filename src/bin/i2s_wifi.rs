@@ -34,7 +34,7 @@ bind_interrupts!(struct Irqs {
 });
 
 // ---------- Executors / Core stacks ----------
-static mut CORE1_STACK: Stack<4096> = Stack::new();
+static mut CORE1_STACK: Stack<16384> = Stack::new();
 static EXECUTOR1: StaticCell<Executor> = StaticCell::new();
 
 // ---------- Audio channel ----------

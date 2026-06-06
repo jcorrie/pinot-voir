@@ -47,7 +47,8 @@ pub async fn i2s_mic_task(
         block_counter += 1;
         audio_block.block_id = block_counter;
         audio_block.timestamp = Instant::now().as_micros();
-        audio_block.update_samples_from_u32(back_buffer.try_into().expect("Buffer size mismatch"));
+        let back: &[u32; BUFFER_SIZE] = (&*back_buffer).try_into().expect("Buffer size mismatch");
+        audio_block.update_samples_from_u32(back);
 
         match audio_channel.try_send(audio_block) {
             Ok(_) => {}

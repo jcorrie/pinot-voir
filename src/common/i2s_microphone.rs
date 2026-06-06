@@ -29,12 +29,14 @@ pub async fn i2s_mic_task(
 ) {
     i2s.start();
 
+    info!("Started i2s");
     static DMA_BUFFER: StaticCell<[u32; BUFFER_SIZE * 2]> = StaticCell::new();
     let dma_buffer = DMA_BUFFER.init_with(|| [0u32; BUFFER_SIZE * 2]);
     let (mut back_buffer, mut front_buffer) = dma_buffer.split_at_mut(BUFFER_SIZE);
 
     let mut block_counter = 0u32;
     loop {
+        info!("Started audio block loop.");
         let mut audio_block = AudioBlock::new();
 
         i2s.read(front_buffer).await;
@@ -46,11 +48,13 @@ pub async fn i2s_mic_task(
         block_counter += 1;
         audio_block.block_id = block_counter;
         audio_block.timestamp = Instant::now().as_micros();
-        audio_block
-            .update_samples_from_u32(back_buffer.try_into().expect("Buffer size mismatch"));
+        audio_block.update_samples_from_u32(back_buffer.try_into().expect("Buffer size mismatch"));
+        info!("{}", &audio_block.samples);
 
         match audio_channel.try_send(audio_block) {
-            Ok(_) => {}
+            Ok(_) => {
+                info!("Bytes sent to audio channel.");
+            }
             Err(_) => info!("Audio channel full, dropping block"),
         }
 

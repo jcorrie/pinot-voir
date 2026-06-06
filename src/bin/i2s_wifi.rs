@@ -71,18 +71,6 @@ async fn main(spawner: Spawner) {
         &program,
     );
 
-    // Spawn Core1: I2S capture task
-    spawn_core1(
-        p.CORE1,
-        unsafe { &mut *core::ptr::addr_of_mut!(CORE1_STACK) },
-        move || {
-            let executor1 = EXECUTOR1.init(Executor::new());
-            executor1.run(|spawner| {
-                spawner.spawn(i2s_mic_task(&AUDIO_CHANNEL, i2s).unwrap());
-            });
-        },
-    );
-
     // Core0: WiFi
     let embassy_pico_wifi_core = EmbassyPicoWifiCore::connect_to_network(
         p.PIN_23,
@@ -104,6 +92,18 @@ async fn main(spawner: Spawner) {
     info!("shared core  started");
     let target_ip = IpAddress::v4(255, 255, 255, 255);
     let port = 1234;
+
+    // Spawn Core1: I2S capture task
+    spawn_core1(
+        p.CORE1,
+        unsafe { &mut *core::ptr::addr_of_mut!(CORE1_STACK) },
+        move || {
+            let executor1 = EXECUTOR1.init(Executor::new());
+            executor1.run(|spawner| {
+                spawner.spawn(i2s_mic_task(&AUDIO_CHANNEL, i2s).unwrap());
+            });
+        },
+    );
     spawner.spawn(udp_tx_task(&AUDIO_CHANNEL, shared_wifi_core, target_ip, port).unwrap());
 }
 

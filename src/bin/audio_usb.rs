@@ -13,7 +13,6 @@ use embassy_usb::class::cdc_acm::{CdcAcmClass, State as CdcState};
 use pinot_voir::common::adc_microphone::adc_task;
 use pinot_voir::common::audio::AudioBlock;
 use pinot_voir::common::usb::{cdc_tx_task, init_usb, usb_device_task};
-use pinot_voir::common::wifi::Irqs;
 use static_cell::StaticCell;
 use {defmt_rtt as _, panic_probe as _};
 

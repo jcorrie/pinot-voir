@@ -119,7 +119,7 @@ async fn udp_tx_task(
 ) -> ! {
     info!("About to start udp");
     let mut rx_buffer = [0; 1024];
-    let mut tx_buffer = [0; 1024];
+    let mut tx_buffer = [0; 2048];
     let mut rx_meta = [PacketMetadata::EMPTY; 16];
     let mut tx_meta = [PacketMetadata::EMPTY; 16];
 

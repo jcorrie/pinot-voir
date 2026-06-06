@@ -16,7 +16,7 @@ use embassy_sync::channel::Channel as SyncChannel;
 use embassy_time::Instant;
 use static_cell::StaticCell;
 
-pub const BUFFER_SIZE: usize = 960;
+pub const BUFFER_SIZE: usize = 720;
 pub const SAMPLE_RATE: u32 = 48_000;
 pub const BIT_DEPTH: u32 = 16;
 pub const CHANNELS: u32 = 1;

@@ -66,20 +66,14 @@ impl EmbassyPicoWifiCore {
         dma_ch2: dma::Channel<'static>,
         spawner: Spawner,
     ) -> Self {
-        info!("starting connect");
         let fw = cyw43::aligned_bytes!("../../cyw43-firmware/43439A0.bin");
         let nvram = cyw43::aligned_bytes!("../../cyw43-firmware/nvram_rp2040.bin");
         let clm = include_bytes!("../../cyw43-firmware/43439A0_clm.bin");
-        info!("a: firmware refs");
 
         let pwr = Output::new(pin_23, Level::Low);
-        info!("b: pwr pin");
         let cs = Output::new(pin_25, Level::High);
-        info!("c: cs pin");
         let config = Config::dhcpv4(Default::default());
-        info!("d: config");
         let mut pio = Pio::new(pio_0, Irqs);
-        info!("e: pio new");
         let spi = PioSpi::new(
             &mut pio.common,
             pio.sm0,
@@ -91,15 +85,11 @@ impl EmbassyPicoWifiCore {
             dma_ch0,
             dma_ch2,
         );
-        info!("f: spi new");
-
-        info!("morej connect");
         static STATE: StaticCell<cyw43::State> = StaticCell::new();
         let state = STATE.init(cyw43::State::new());
         let (net_device, mut control, runner) = cyw43::new(state, pwr, spi, fw, nvram).await;
         spawner.spawn(wifi_task(runner).expect("Error running wifi task"));
 
-        info!("more connect");
         control.init(clm).await;
         control
             .set_power_management(cyw43::PowerManagementMode::PowerSave)

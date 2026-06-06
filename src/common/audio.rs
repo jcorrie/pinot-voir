@@ -1,6 +1,6 @@
 use {defmt_rtt as _, panic_probe as _};
 
-pub const BUFFER_SIZE: usize = 960;
+pub const BUFFER_SIZE: usize = 720;
 
 #[derive(Clone, Copy)]
 pub struct AudioBlock {

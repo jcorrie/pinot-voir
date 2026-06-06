@@ -92,7 +92,7 @@ impl EmbassyPicoWifiCore {
 
         control.init(clm).await;
         control
-            .set_power_management(cyw43::PowerManagementMode::PowerSave)
+            .set_power_management(cyw43::PowerManagementMode::None)
             .await;
 
         static RESOURCES: StaticCell<StackResources<WEB_TASK_POOL_SIZE>> = StaticCell::new();

@@ -11,7 +11,7 @@ FRAME_RATE = 44100
 CHANNELS = 1
 SAMPLE_WIDTH = 2  # int16
 BLOCK_SIZE = 512
-MAX_PACKET_SIZE = 1024
+MAX_PACKET_SIZE = 1440
 
 def is_audio_data(data):
     if len(data) % 2 != 0:
@@ -31,7 +31,7 @@ sock.bind((UDP_IP, UDP_PORT))
 sock.setblocking(False)
 
 # Use minimal buffering for low latency
-audio_buffer = deque(maxlen=2)  # Maximum 2 blocks
+audio_buffer = deque(maxlen=4)  
 target_block_time = 512 / FRAME_RATE  # 11.6ms per block
 last_play_time = time.time()
 

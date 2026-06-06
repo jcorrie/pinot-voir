@@ -36,7 +36,6 @@ pub async fn i2s_mic_task(
 
     let mut block_counter = 0u32;
     loop {
-        info!("Started audio block loop.");
         let mut audio_block = AudioBlock::new();
 
         i2s.read(front_buffer).await;
@@ -49,12 +48,9 @@ pub async fn i2s_mic_task(
         audio_block.block_id = block_counter;
         audio_block.timestamp = Instant::now().as_micros();
         audio_block.update_samples_from_u32(back_buffer.try_into().expect("Buffer size mismatch"));
-        info!("{}", &audio_block.samples);
 
         match audio_channel.try_send(audio_block) {
-            Ok(_) => {
-                info!("Bytes sent to audio channel.");
-            }
+            Ok(_) => {}
             Err(_) => info!("Audio channel full, dropping block"),
         }
 

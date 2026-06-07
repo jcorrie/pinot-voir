@@ -31,6 +31,9 @@ impl AudioBlock {
 
     pub fn update_samples_from_u32(&mut self, samples: &[u32; BUFFER_SIZE]) {
         for (dst, &src) in self.samples.iter_mut().zip(samples.iter()) {
+            // PIO shifts LEFT: right-channel bits (second 16) land in upper 16 bits,
+            // left-channel bits (first 16) land in lower 16 bits.
+            // Use SELECT=3V3 on the mic (right channel) to match upper 16 bits.
             *dst = ((src as i32) >> 16) as i16;
         }
     }

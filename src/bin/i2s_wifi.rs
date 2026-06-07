@@ -141,7 +141,7 @@ async fn udp_tx_task(
     info!("UDP task: block duration = {} µs", BLOCK_DURATION_MICROS);
 
     loop {
-        let send_start = Instant::now();
+        let t0 = Instant::now();
 
         let mut block: AudioBlock = audio_channel.receive().await;
         let mut dropped = 0u32;
@@ -153,6 +153,7 @@ async fn udp_tx_task(
             info!("Dropped {} stale audio blocks", dropped);
         }
 
+        let t1 = Instant::now();
         let bytes: &[u8] = bytemuck::cast_slice(&block.samples);
         match socket.send_to(bytes, endpoint).await {
             Ok(_) => blocks_ok += 1,
@@ -161,14 +162,18 @@ async fn udp_tx_task(
                 info!("UDP send error: {:?}", e);
             }
         }
+        let t2 = Instant::now();
 
-        let elapsed = send_start.elapsed().as_micros();
+        let recv_us = t1.duration_since(t0).as_micros();
+        let send_us = t2.duration_since(t1).as_micros();
+        let elapsed = t2.duration_since(t0).as_micros();
+
         if elapsed < BLOCK_DURATION_MICROS {
             Timer::after_micros(BLOCK_DURATION_MICROS - elapsed).await;
         } else {
             info!(
-                "Processing took {}µs, expected {}µs",
-                elapsed, BLOCK_DURATION_MICROS
+                "recv={}µs send={}µs total={}µs (expected {}µs)",
+                recv_us, send_us, elapsed, BLOCK_DURATION_MICROS
             );
         }
 

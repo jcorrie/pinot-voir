@@ -77,9 +77,9 @@ async fn main(spawner: Spawner) {
         p.DMA_CH1,
         Irqs,
         USE_ONBOARD_PULLDOWN,
-        p.PIN_19, // data  (DOUT → GPIO19)
-        p.PIN_18, // bit clock
-        p.PIN_20, // LR clock (LRCLK → GPIO20)
+        p.PIN_20, // data  (DOUT → GPIO20, physical pin 26)
+        p.PIN_18, // bit clock (BCLK → GPIO18, physical pin 24)
+        p.PIN_19, // LR clock (LRCLK → GPIO19, physical pin 25)
         SAMPLE_RATE,
         BIT_DEPTH,
         CHANNELS,

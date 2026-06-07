@@ -35,7 +35,6 @@ embassy-net = { version = "0.9.1", features = [
 ] }
 cyw43 = { version = "0.7.0", features = [
     "defmt",
-    "firmware-logs",
     "bluetooth",
 ] }
 cyw43-pio = { version = "0.10.0", features = ["defmt"] }

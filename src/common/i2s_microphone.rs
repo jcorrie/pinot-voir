@@ -1,9 +1,9 @@
 //! I2S microphone task for SPH0645LM4H
 //!
 //! Connect the i2s microphone as follows:
-//!   bclk : GPIO 18
-//!   lrc  : GPIO 19
-//!   din  : GPIO 20
+//!   bclk : GPIO 18  (physical pin 24)
+//!   din  : GPIO 19  (physical pin 25)
+//!   lrc  : GPIO 20  (physical pin 26)
 
 use core::mem;
 

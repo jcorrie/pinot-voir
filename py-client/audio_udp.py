@@ -1,32 +1,27 @@
 import socket
-import struct
 import time
 import numpy as np
 import sounddevice as sd
 from collections import deque
 
-UDP_IP = "0.0.0.0"  # Listen on all interfaces
+UDP_IP = "0.0.0.0"
 UDP_PORT = 1234
 SAMPLE_RATE = 48000
 CHANNELS = 1
-SAMPLE_WIDTH = 2  # int16
-BUFFER_SIZE = 720  # samples per packet — must match i2s_microphone.rs BUFFER_SIZE
-PACKET_BYTES = BUFFER_SIZE * SAMPLE_WIDTH  # 1440 bytes
-BLOCK_DURATION = BUFFER_SIZE / SAMPLE_RATE  # 15ms per block
-MAX_PACKET_SIZE = 2048  # generous receive buffer
+BUFFER_SIZE = 720   # must match i2s_microphone.rs BUFFER_SIZE
+PACKET_BYTES = BUFFER_SIZE * 2  # 1440 bytes (int16)
+MAX_PACKET_SIZE = 2048
 
 print(f"Listening for UDP audio on port {UDP_PORT}...")
-print(f"Expecting {BUFFER_SIZE} samples ({PACKET_BYTES} bytes) per packet @ {SAMPLE_RATE}Hz")
+print(f"Expecting {BUFFER_SIZE} samples ({PACKET_BYTES} bytes) @ {SAMPLE_RATE}Hz")
 
 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 sock.bind((UDP_IP, UDP_PORT))
 sock.setblocking(False)
 
-# Jitter buffer: hold a few blocks to smooth over timing variation
-audio_buffer = deque(maxlen=8)
-last_play_time = time.time()
+# Jitter buffer: grow to absorb bursts, shrink when empty
+audio_buffer = deque()
 
-# Statistics
 packets_received = 0
 packets_played = 0
 packets_wrong_size = 0
@@ -36,60 +31,53 @@ buffer_underruns = 0
 start_time = time.time()
 last_stats_time = start_time
 
+# Use a callback-based output stream so playback timing is driven by the
+# sound card, not our Python poll loop.
+def audio_callback(outdata, frames, time_info, status):
+    global packets_played, buffer_underruns
+    if audio_buffer:
+        block = audio_buffer.popleft()
+        outdata[:, 0] = block
+        packets_played += 1
+    else:
+        outdata[:] = 0
+        buffer_underruns += 1
+
 with sd.OutputStream(
     samplerate=SAMPLE_RATE,
     channels=CHANNELS,
     dtype="int16",
     blocksize=BUFFER_SIZE,
+    callback=audio_callback,
     latency="low",
-) as stream:
-
+):
     while True:
-        current_time = time.time()
-
-        # Drain all available packets into the jitter buffer
+        # Drain all waiting UDP packets into the jitter buffer
         try:
             while True:
-                data, addr = sock.recvfrom(MAX_PACKET_SIZE)
+                data, _ = sock.recvfrom(MAX_PACKET_SIZE)
                 if len(data) == PACKET_BYTES:
-                    audio_array = np.frombuffer(data, dtype=np.int16).copy()
-
-                    if len(audio_buffer) == audio_buffer.maxlen:
-                        buffer_overruns += 1
-
-                    audio_buffer.append(audio_array)
+                    audio_buffer.append(np.frombuffer(data, dtype=np.int16).copy())
                     packets_received += 1
+                    if len(audio_buffer) > 32:   # safety cap: ~2s of audio
+                        audio_buffer.popleft()
+                        buffer_overruns += 1
                 else:
                     packets_wrong_size += 1
         except BlockingIOError:
             pass
 
-        # Play one block per block-duration tick
-        if current_time - last_play_time >= BLOCK_DURATION:
-            if len(audio_buffer) > 0:
-                stream.write(audio_buffer.popleft())
-                packets_played += 1
-            else:
-                silence = np.zeros(BUFFER_SIZE, dtype=np.int16)
-                stream.write(silence)
-                buffer_underruns += 1
-
-            last_play_time = current_time
-
-        # Print stats every 2 seconds
         current_time = time.time()
         if current_time - last_stats_time >= 2.0:
             elapsed = current_time - start_time
             print(
-                f"Stats: {packets_received} received, {packets_played} played, "
-                f"{packets_wrong_size} wrong-size, "
-                f"{buffer_overruns} overruns, {buffer_underruns} underruns, "
-                f"buffer: {len(audio_buffer)}, rate: {packets_received/elapsed:.1f} pkt/s"
+                f"recv={packets_received} played={packets_played} "
+                f"wrong={packets_wrong_size} over={buffer_overruns} "
+                f"under={buffer_underruns} buf={len(audio_buffer)} "
+                f"rate={packets_received/elapsed:.1f}pkt/s"
             )
             last_stats_time = current_time
 
-        # Small sleep to prevent busy waiting
         time.sleep(0.001)
 
 sock.close()
-print("Live UDP audio streaming finished.")

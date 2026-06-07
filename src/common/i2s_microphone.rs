@@ -19,7 +19,7 @@ use static_cell::StaticCell;
 pub const BUFFER_SIZE: usize = 720;
 pub const SAMPLE_RATE: u32 = 48_000;
 pub const BIT_DEPTH: u32 = 16;
-pub const CHANNELS: u32 = 1;
+pub const CHANNELS: u32 = 2;
 pub const USE_ONBOARD_PULLDOWN: bool = false;
 
 #[embassy_executor::task]

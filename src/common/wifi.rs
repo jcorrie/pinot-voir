@@ -73,7 +73,14 @@ impl EmbassyPicoWifiCore {
         // at hardcoded addresses, instead of baking them into the program with `include_bytes!`:
         //      probe-rs download ../../cyw43-firmware/43439A0.bin --binary-format bin --chip RP2040 --base-address 0x10100000
         //     probe-rs download ../../cyw43-firmware/43439A0_clm.bin --binary-format bin --chip RP2040 --base-address 0x10140000
-        let fw = unsafe { core::slice::from_raw_parts(0x10100000 as *const u8, 230321) };
+        // Firmware is pre-flashed at 0x10100000 (4-byte aligned). Cast the raw slice
+        // to &Aligned<A4, [u8]> as required by the updated cyw43::new() API.
+        // Safety: address is 4-byte aligned and contains valid firmware bytes.
+        let fw: &cyw43::Aligned<cyw43::A4, [u8]> = unsafe {
+            &*(core::slice::from_raw_parts(0x10100000 as *const u8, 230321)
+                as *const [u8]
+                as *const cyw43::Aligned<cyw43::A4, [u8]>)
+        };
         let clm = unsafe { core::slice::from_raw_parts(0x10140000 as *const u8, 4752) };
 
         let pwr = Output::new(pin_23, Level::Low);

@@ -6,7 +6,7 @@ from collections import deque
 
 UDP_IP = "0.0.0.0"
 UDP_PORT = 1234
-SAMPLE_RATE = 48000
+SAMPLE_RATE = 12000  # play at 12kHz so 720-sample blocks = 60ms each, matching ~16pkt/s WiFi rate
 CHANNELS = 1
 BUFFER_SIZE = 720   # must match i2s_microphone.rs BUFFER_SIZE
 PACKET_BYTES = BUFFER_SIZE * 2  # 1440 bytes (int16)
@@ -44,6 +44,7 @@ def audio_callback(outdata, frames, time_info, status):
         buffer_underruns += 1
 
 with sd.OutputStream(
+    device=3,  # MacBook Pro Speakers
     samplerate=SAMPLE_RATE,
     channels=CHANNELS,
     dtype="int16",

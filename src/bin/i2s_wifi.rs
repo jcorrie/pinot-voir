@@ -4,13 +4,11 @@
 #![feature(impl_trait_in_assoc_type)]
 
 use defmt::*;
-use embassy_executor::Executor;
 use embassy_executor::Spawner;
 use embassy_net::udp::{PacketMetadata, UdpSocket};
 use embassy_net::{IpAddress, IpEndpoint};
 use embassy_rp::bind_interrupts;
 use embassy_rp::dma;
-use embassy_rp::multicore::{spawn_core1, Stack};
 use embassy_rp::peripherals::{DMA_CH0, DMA_CH1, DMA_CH2, PIO1};
 use embassy_rp::pio::{InterruptHandler, Pio};
 use embassy_rp::pio_programs::i2s::{PioI2sIn, PioI2sInProgram};
@@ -33,11 +31,8 @@ bind_interrupts!(struct Irqs {
     DMA_IRQ_0  => dma::InterruptHandler<DMA_CH0>, dma::InterruptHandler<DMA_CH1>, dma::InterruptHandler<DMA_CH2>;
 });
 
-// ---------- Executors / Core stacks ----------
-static mut CORE1_STACK: Stack<16384> = Stack::new();
-static EXECUTOR1: StaticCell<Executor> = StaticCell::new();
-
 // ---------- Audio channel ----------
+// Capacity 4: I2S and UDP tx both run on Core0, so no cross-core wakeup delay.
 static AUDIO_CHANNEL: SyncChannel<CriticalSectionRawMutex, AudioBlock, 4> = SyncChannel::new();
 
 static ENV: StaticCell<EnvironmentVariables> = StaticCell::new();
@@ -51,7 +46,10 @@ async fn main(spawner: Spawner) {
 
     let p = embassy_rp::init(Default::default());
 
-    // Build the I2S driver here so the binding (Irqs) is local to this binary.
+    // Build the I2S driver — both I2S and WiFi tasks run on Core0's executor.
+    // I2S is DMA-driven (PIO1/DMA_CH1) and WiFi uses PIO0/DMA_CH0/CH2, so
+    // there is no resource conflict.  Running on the same core eliminates the
+    // cross-core wakeup latency that caused ~60 ms recv delays.
     let Pio {
         mut common, sm0, ..
     } = Pio::new(p.PIO1, Irqs);
@@ -71,21 +69,10 @@ async fn main(spawner: Spawner) {
         &program,
     );
 
-    // Spawn Core1: I2S capture task — must happen before WiFi init to avoid
-    // interference between active DMA (cyw43) and the SIO FIFO handshake in
-    // spawn_core1.
-    spawn_core1(
-        p.CORE1,
-        unsafe { &mut *core::ptr::addr_of_mut!(CORE1_STACK) },
-        move || {
-            let executor1 = EXECUTOR1.init(Executor::new());
-            executor1.run(|spawner| {
-                spawner.spawn(i2s_mic_task(&AUDIO_CHANNEL, i2s).unwrap());
-            });
-        },
-    );
+    // Spawn I2S capture on Core0 before WiFi init.
+    spawner.spawn(i2s_mic_task(&AUDIO_CHANNEL, i2s).unwrap());
 
-    // Core0: WiFi
+    // WiFi init (also Core0).
     let embassy_pico_wifi_core = EmbassyPicoWifiCore::connect_to_network(
         p.PIN_23,
         p.PIN_24,
@@ -99,12 +86,10 @@ async fn main(spawner: Spawner) {
     )
     .await;
 
-    info!("core0 started");
     let shared_wifi_core: SharedEmbassyWifiPicoCore =
         SharedEmbassyWifiPicoCore(WIFI_CORE.init(Mutex::new(embassy_pico_wifi_core)));
 
-    info!("shared core  started");
-    let target_ip = IpAddress::v4(192, 168, 1, 228); // Mac LAN IP — unicast is faster than broadcast on 802.11
+    let target_ip = IpAddress::v4(255, 255, 255, 255);
     let port = 1234;
 
     spawner.spawn(udp_tx_task(&AUDIO_CHANNEL, shared_wifi_core, target_ip, port).unwrap());

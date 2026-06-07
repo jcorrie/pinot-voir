@@ -49,10 +49,11 @@ pub async fn i2s_mic_task(
         audio_block.timestamp = Instant::now().as_micros();
         let back: &[u32; BUFFER_SIZE] = (&*back_buffer).try_into().expect("Buffer size mismatch");
 
-        // Log raw DMA values for the first 3 blocks to verify mic is outputting data
-        if block_counter <= 3 {
-            info!("block {} raw[0..4]: {:08x} {:08x} {:08x} {:08x}",
-                block_counter, back[0], back[1], back[2], back[3]);
+        // Log raw DMA values every 100 blocks to verify mic is outputting data
+        if block_counter % 100 == 0 {
+            let max_raw = back.iter().copied().max().unwrap_or(0);
+            info!("block {} raw[0..4]: {:08x} {:08x} {:08x} {:08x} max={:08x}",
+                block_counter, back[0], back[1], back[2], back[3], max_raw);
         }
 
         audio_block.update_samples_from_u32(back);

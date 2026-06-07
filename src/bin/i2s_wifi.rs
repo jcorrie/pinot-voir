@@ -45,7 +45,7 @@ async fn main(spawner: Spawner) {
     let environment_variables: &'static EnvironmentVariables =
         ENV.init(EnvironmentVariables::new());
 
-    let p = embassy_rp::init(Default::default());
+    let mut p = embassy_rp::init(Default::default());
 
     // --- GPIO 20 diagnostic: read level before handing pin to PIO ---
     // Pull-up: if floating → reads High; if shorted to GND → reads Low

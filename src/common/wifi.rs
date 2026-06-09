@@ -77,8 +77,7 @@ impl EmbassyPicoWifiCore {
         // to &Aligned<A4, [u8]> as required by the updated cyw43::new() API.
         // Safety: address is 4-byte aligned and contains valid firmware bytes.
         let fw: &cyw43::Aligned<cyw43::A4, [u8]> = unsafe {
-            &*(core::slice::from_raw_parts(0x10100000 as *const u8, 230321)
-                as *const [u8]
+            &*(core::slice::from_raw_parts(0x10100000 as *const u8, 230321) as *const [u8]
                 as *const cyw43::Aligned<cyw43::A4, [u8]>)
         };
         let clm = unsafe { core::slice::from_raw_parts(0x10140000 as *const u8, 4752) };

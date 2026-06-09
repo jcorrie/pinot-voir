@@ -45,23 +45,7 @@ async fn main(spawner: Spawner) {
     let environment_variables: &'static EnvironmentVariables =
         ENV.init(EnvironmentVariables::new());
 
-    let mut p = embassy_rp::init(Default::default());
-
-    // --- GPIO 20 diagnostic: read level before handing pin to PIO ---
-    // Pull-up: if floating → reads High; if shorted to GND → reads Low
-    // Pull-down: if floating → reads Low; if driven by mic → may read High
-    {
-        let pin20 = Input::new(p.PIN_20.reborrow(), Pull::Up);
-        let level_pullup = pin20.get_level();
-        drop(pin20);
-        let pin20 = Input::new(p.PIN_20.reborrow(), Pull::Down);
-        let level_pulldown = pin20.get_level();
-        drop(pin20);
-        info!(
-            "GPIO20 pre-PIO: pull-up={} pull-down={} | floating→1/0, shorted-GND→0/0, mic-active→varies",
-            level_pullup as u8, level_pulldown as u8
-        );
-    }
+    let p = embassy_rp::init(Default::default());
 
     // Build the I2S driver — both I2S and WiFi tasks run on Core0's executor.
     // I2S is DMA-driven (PIO1/DMA_CH1) and WiFi uses PIO0/DMA_CH0/CH2, so

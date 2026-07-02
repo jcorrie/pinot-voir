@@ -1,15 +1,22 @@
-//! Microphone-only UDP audio: I2S mic → UDP. Same protocol and transport
-//! as `audio_duplex.rs`, just without a speaker attached — received audio
-//! packets still refresh the peer endpoint but are never played.
+//! Full-duplex UDP audio over WiFi.
 //!
-//! Start `py-client/audio_udp.py` on the desktop first (with `--listen-only`
-//! if you don't want to send audio); the pico streams back to whoever
-//! talks to it.
+//! I2S microphone → UDP out, UDP in → I2S DAC/amp, both at 48 kHz mono
+//! 16-bit in 720-sample blocks. See `common/audio.rs` for the wire format
+//! and `py-client/audio_udp.py` for the matching desktop client — start the
+//! client first; the pico learns where to send from the client's packets.
 //!
-//! Wiring (SPH0645, SELECT → GND):
-//!   bclk : GPIO 18 (physical pin 24)
-//!   lrc  : GPIO 19 (physical pin 25)
-//!   dout : GPIO 20 (physical pin 26)
+//! Wiring:
+//!   Microphone (SPH0645, SELECT → GND):
+//!     bclk : GPIO 18 (physical pin 24)
+//!     lrc  : GPIO 19 (physical pin 25)
+//!     dout : GPIO 20 (physical pin 26)
+//!   Speaker (MAX98357A or similar):
+//!     din  : GPIO 13 (physical pin 17)
+//!     bclk : GPIO 14 (physical pin 19)
+//!     lrc  : GPIO 15 (physical pin 20)
+//!
+//! Resource map: WiFi uses PIO0 + DMA_CH0/CH2, mic uses PIO1 sm0 + DMA_CH1,
+//! speaker uses PIO1 sm1 + DMA_CH3 — no conflicts, everything on Core0.
 
 #![no_std]
 #![no_main]
@@ -19,9 +26,9 @@
 use embassy_executor::Spawner;
 use embassy_rp::bind_interrupts;
 use embassy_rp::dma;
-use embassy_rp::peripherals::{DMA_CH0, DMA_CH1, DMA_CH2, PIO1};
+use embassy_rp::peripherals::{DMA_CH0, DMA_CH1, DMA_CH2, DMA_CH3, PIO1};
 use embassy_rp::pio::{InterruptHandler, Pio};
-use embassy_rp::pio_programs::i2s::{PioI2sIn, PioI2sInProgram};
+use embassy_rp::pio_programs::i2s::{PioI2sIn, PioI2sInProgram, PioI2sOut, PioI2sOutProgram};
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::mutex::Mutex;
 use pinot_voir::common::audio::{MicChannel, SpeakerChannel, SAMPLE_RATE};
@@ -29,6 +36,7 @@ use pinot_voir::common::audio_udp::{audio_duplex_task, AUDIO_PORT};
 use pinot_voir::common::i2s_microphone::{
     i2s_mic_task, BIT_DEPTH, CHANNELS, USE_ONBOARD_PULLDOWN,
 };
+use pinot_voir::common::i2s_speaker::{self, i2s_speaker_task};
 use pinot_voir::common::shared_functions::EnvironmentVariables;
 use pinot_voir::common::wifi::{EmbassyPicoWifiCore, SharedEmbassyWifiPicoCore};
 use static_cell::StaticCell;
@@ -37,12 +45,10 @@ use {defmt_rtt as _, panic_probe as _};
 // All interrupts used by this binary in one place — avoids multiply-defined symbols with LTO.
 bind_interrupts!(struct Irqs {
     PIO1_IRQ_0 => InterruptHandler<PIO1>;
-    DMA_IRQ_0  => dma::InterruptHandler<DMA_CH0>, dma::InterruptHandler<DMA_CH1>, dma::InterruptHandler<DMA_CH2>;
+    DMA_IRQ_0  => dma::InterruptHandler<DMA_CH0>, dma::InterruptHandler<DMA_CH1>, dma::InterruptHandler<DMA_CH2>, dma::InterruptHandler<DMA_CH3>;
 });
 
 static MIC_CHANNEL: MicChannel = MicChannel::new();
-// Unused (no speaker attached) but the duplex task needs somewhere to queue
-// any audio the peer sends.
 static SPEAKER_CHANNEL: SpeakerChannel = SpeakerChannel::new();
 
 static ENV: StaticCell<EnvironmentVariables> = StaticCell::new();
@@ -56,29 +62,46 @@ async fn main(spawner: Spawner) {
 
     let p = embassy_rp::init(Default::default());
 
-    // I2S is DMA-driven (PIO1/DMA_CH1) and WiFi uses PIO0/DMA_CH0/CH2, so
-    // there is no resource conflict. Running on the same core eliminates the
-    // cross-core wakeup latency that caused ~60 ms recv delays.
+    // PIO1 hosts both I2S state machines; WiFi owns PIO0.
     let Pio {
-        mut common, sm0, ..
+        mut common,
+        sm0,
+        sm1,
+        ..
     } = Pio::new(p.PIO1, Irqs);
-    let program = PioI2sInProgram::new(&mut common);
-    let i2s = PioI2sIn::new(
+
+    let in_program = PioI2sInProgram::new(&mut common);
+    let mic = PioI2sIn::new(
         &mut common,
         sm0,
         p.DMA_CH1,
         Irqs,
         USE_ONBOARD_PULLDOWN,
-        p.PIN_20, // data  (DOUT → GPIO20, physical pin 26)
-        p.PIN_18, // bit clock (BCLK → GPIO18, physical pin 24)
-        p.PIN_19, // LR clock (LRCLK → GPIO19, physical pin 25)
+        p.PIN_20, // data
+        p.PIN_18, // bit clock
+        p.PIN_19, // LR clock
         SAMPLE_RATE,
         BIT_DEPTH,
         CHANNELS,
-        &program,
+        &in_program,
     );
 
-    spawner.spawn(i2s_mic_task(&MIC_CHANNEL, i2s).unwrap());
+    let out_program = PioI2sOutProgram::new(&mut common);
+    let speaker = PioI2sOut::new(
+        &mut common,
+        sm1,
+        p.DMA_CH3,
+        Irqs,
+        p.PIN_13, // data
+        p.PIN_14, // bit clock
+        p.PIN_15, // LR clock
+        SAMPLE_RATE,
+        i2s_speaker::BIT_DEPTH,
+        &out_program,
+    );
+
+    spawner.spawn(i2s_mic_task(&MIC_CHANNEL, mic).unwrap());
+    spawner.spawn(i2s_speaker_task(&SPEAKER_CHANNEL, speaker).unwrap());
 
     let embassy_pico_wifi_core = EmbassyPicoWifiCore::connect_to_network(
         p.PIN_23,

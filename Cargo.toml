@@ -181,6 +181,14 @@ doctest = false
 bench = false
 
 
+[[bin]]
+name = "audio_duplex"
+path = "src/bin/audio_duplex.rs"
+test = false
+doctest = false
+bench = false
+
+
 [lib]
 name = "pinot_voir"
 path = "src/lib.rs"

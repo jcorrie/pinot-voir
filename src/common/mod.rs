@@ -15,4 +15,8 @@ pub mod usb;
 
 pub mod i2s_microphone;
 
+pub mod i2s_speaker;
+
 pub mod audio;
+
+pub mod audio_udp;

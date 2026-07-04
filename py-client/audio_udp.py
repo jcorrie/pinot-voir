@@ -22,6 +22,8 @@ Usage:
 """
 
 import argparse
+import ipaddress
+import os
 import socket
 import struct
 import sys
@@ -157,32 +159,43 @@ def main():
     if not args.pico_ip:
         parser.error("pico_ip is required (or use --list-devices)")
 
+    # Tolerate the CIDR form the pico logs ("192.168.1.133/24").
+    pico_ip = args.pico_ip.split("/", 1)[0]
+    try:
+        ipaddress.ip_address(pico_ip)
+    except ValueError:
+        parser.error(f"invalid pico IP: {args.pico_ip!r}")
+
     def parse_device(dev):
         if dev is None:
             return None
         return int(dev) if dev.isdigit() else dev
 
-    pico_addr = (args.pico_ip, args.port)
+    pico_addr = (pico_ip, args.port)
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.bind(("0.0.0.0", 0))  # ephemeral port; the pico replies to it
     sock.settimeout(2.0)
 
     stats = Stats()
 
-    threading.Thread(
-        target=rx_loop,
-        args=(sock, parse_device(args.output_device), stats),
-        daemon=True,
-    ).start()
+    def spawn(target, *target_args):
+        """Run a worker thread; a dead worker means a dead client, so exit loudly."""
+
+        def runner():
+            try:
+                target(*target_args)
+            except Exception as e:
+                print(f"fatal: {target.__name__}: {e}", file=sys.stderr)
+                os._exit(1)
+
+        threading.Thread(target=runner, daemon=True).start()
+
+    spawn(rx_loop, sock, parse_device(args.output_device), stats)
 
     if args.listen_only:
-        threading.Thread(target=keepalive_loop, args=(sock, pico_addr), daemon=True).start()
+        spawn(keepalive_loop, sock, pico_addr)
     else:
-        threading.Thread(
-            target=tx_loop,
-            args=(sock, pico_addr, parse_device(args.input_device), stats),
-            daemon=True,
-        ).start()
+        spawn(tx_loop, sock, pico_addr, parse_device(args.input_device), stats)
 
     mode = "listen-only" if args.listen_only else "duplex"
     print(f"{mode}: {BUFFER_SIZE} samples/block @ {SAMPLE_RATE} Hz <-> {pico_addr[0]}:{pico_addr[1]}")

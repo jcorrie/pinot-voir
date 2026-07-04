@@ -30,6 +30,7 @@ pub async fn i2s_mic_task(audio_channel: &'static MicChannel, mut i2s: PioI2sIn<
     let (mut back_buffer, mut front_buffer) = dma_buffer.split_at_mut(BUFFER_SIZE);
 
     let mut block_counter = 0u32;
+    let mut dropped = 0u32;
     loop {
         let mut audio_block = AudioBlock::new();
 
@@ -46,9 +47,17 @@ pub async fn i2s_mic_task(audio_channel: &'static MicChannel, mut i2s: PioI2sIn<
 
         audio_block.update_samples_from_u32(back);
 
+        // Dropping is the normal state whenever nothing drains the channel
+        // (WiFi still connecting, no peer attached), so rate-limit the log
+        // to roughly one line every two seconds.
         match audio_channel.try_send(audio_block) {
             Ok(_) => {}
-            Err(_) => info!("Audio channel full, dropping block"),
+            Err(_) => {
+                dropped += 1;
+                if dropped % 128 == 1 {
+                    info!("Audio channel full, {} blocks dropped so far", dropped);
+                }
+            }
         }
 
         next_dma.await;

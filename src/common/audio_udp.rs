@@ -88,11 +88,17 @@ pub async fn audio_duplex_task(
                 if let Some(endpoint) = peer {
                     write_packet(&mut tx_pkt, Direction::FromPico, tx_seq, &block.samples);
                     tx_seq = tx_seq.wrapping_add(1);
-                    match socket.send_to(&tx_pkt, endpoint).await {
+                    // Non-blocking send: when the radio stalls (cyw43 "TX
+                    // stalled") an awaited send_to would jam this loop and
+                    // stop rx processing too, expiring the peer. Freshness
+                    // beats reliability here — drop the block instead.
+                    match socket.try_send_to(&tx_pkt, endpoint) {
                         Ok(()) => tx_ok += 1,
                         Err(e) => {
                             tx_err += 1;
-                            warn!("UDP send error: {:?}", e);
+                            if tx_err % 128 == 1 {
+                                warn!("UDP send failed ({} so far): {:?}", tx_err, e);
+                            }
                         }
                     }
                 }

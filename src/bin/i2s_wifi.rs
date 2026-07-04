@@ -21,13 +21,12 @@ use embassy_rp::bind_interrupts;
 use embassy_rp::dma;
 use embassy_rp::peripherals::{DMA_CH0, DMA_CH1, DMA_CH2, PIO1};
 use embassy_rp::pio::{InterruptHandler, Pio};
-use embassy_rp::pio_programs::i2s::{PioI2sIn, PioI2sInProgram};
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::mutex::Mutex;
 use pinot_voir::common::audio::{MicChannel, SpeakerChannel, SAMPLE_RATE};
 use pinot_voir::common::audio_udp::{audio_duplex_task, AUDIO_PORT};
 use pinot_voir::common::i2s_microphone::{
-    i2s_mic_task, BIT_DEPTH, CHANNELS, USE_ONBOARD_PULLDOWN,
+    i2s_mic_task, Sph0645I2sIn, Sph0645InProgram, USE_ONBOARD_PULLDOWN,
 };
 use pinot_voir::common::shared_functions::EnvironmentVariables;
 use pinot_voir::common::wifi::{EmbassyPicoWifiCore, SharedEmbassyWifiPicoCore};
@@ -62,8 +61,8 @@ async fn main(spawner: Spawner) {
     let Pio {
         mut common, sm0, ..
     } = Pio::new(p.PIO1, Irqs);
-    let program = PioI2sInProgram::new(&mut common);
-    let i2s = PioI2sIn::new(
+    let program = Sph0645InProgram::new(&mut common);
+    let i2s = Sph0645I2sIn::new(
         &mut common,
         sm0,
         p.DMA_CH1,
@@ -73,8 +72,6 @@ async fn main(spawner: Spawner) {
         p.PIN_18, // bit clock (BCLK → GPIO18, physical pin 24)
         p.PIN_19, // LR clock (LRCLK → GPIO19, physical pin 25)
         SAMPLE_RATE,
-        BIT_DEPTH,
-        CHANNELS,
         &program,
     );
 

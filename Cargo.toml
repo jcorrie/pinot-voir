@@ -72,6 +72,7 @@ serde = { version = "1.0.219", default-features = false, features = ["derive"] }
 embedded-io-async = "0.6.1"
 der = { version = "0.8", features = ["heapless"] }
 bytemuck = "1.23.2"
+pio = "0.3.0"
 embassy-usb-logger = "0.6.0"
 embassy-usb = { version = "0.6.0", features = ["defmt"] }
 log = "0.4.27"

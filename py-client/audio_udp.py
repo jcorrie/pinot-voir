@@ -110,7 +110,8 @@ def rx_loop(sock: socket.socket, output_device, stats: Stats):
 
             samples = np.frombuffer(payload, dtype="<i2")
             with stats.lock:
-                stats.peak = int(np.max(np.abs(samples)))
+                # widen first: np.abs(int16 -32768) overflows back to -32768
+                stats.peak = int(np.max(np.abs(samples.astype(np.int32))))
             stream.write(samples)
 
 
@@ -210,14 +211,17 @@ def main():
         f"<-> {pico_addr[0]}:{pico_addr[1]} (local port {local_port})"
     )
 
-    start = time.time()
+    last_rx = 0
+    last_time = time.time()
     try:
         while True:
             time.sleep(2.0)
             with stats.lock:
-                elapsed = time.time() - start
+                now = time.time()
+                rate = (stats.rx - last_rx) / (now - last_time)
+                last_rx, last_time = stats.rx, now
                 print(
-                    f"rx={stats.rx} ({stats.rx/elapsed:.1f}pkt/s) lost={stats.rx_lost} "
+                    f"rx={stats.rx} ({rate:.1f}pkt/s) lost={stats.rx_lost} "
                     f"bad={stats.rx_bad} tx={stats.tx} peak={stats.peak}"
                 )
     except KeyboardInterrupt:

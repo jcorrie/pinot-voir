@@ -118,13 +118,15 @@ impl AudioBlock {
         self.samples = samples;
     }
 
-    pub fn update_samples_from_u32(&mut self, samples: &[u32; BUFFER_SIZE]) {
-        for (dst, &src) in self.samples.iter_mut().zip(samples.iter()) {
-            // The PIO ISR shifts LEFT, so the first 16 bits clocked in (the
-            // LEFT channel, WS low) end up in the upper half-word. With the
-            // mic's SELECT pin tied to GND it outputs on the left channel,
-            // which is what we extract here.
-            *dst = ((src as i32) >> 16) as i16;
+    /// Fill `samples` from raw 32-bit I2S half-frames captured as
+    /// `[left, right, left, right, ...]` words. The PIO state machine
+    /// starts at the beginning of a left half-frame and FIFO stalls pause
+    /// the bus rather than dropping words, so even indices are always the
+    /// left channel (mic SELECT → GND). The mic's 18-bit sample sits
+    /// MSB-first from bit 31; keep the top 16 bits.
+    pub fn update_samples_from_i2s_frames(&mut self, frames: &[u32]) {
+        for (dst, pair) in self.samples.iter_mut().zip(frames.chunks_exact(2)) {
+            *dst = ((pair[0] as i32) >> 16) as i16;
         }
     }
 

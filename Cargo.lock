@@ -1865,6 +1865,7 @@ dependencies = [
  "log",
  "panic-probe",
  "picoserve",
+ "pio",
  "portable-atomic",
  "rand",
  "reqwless",

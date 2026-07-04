@@ -12,7 +12,7 @@ Wire format (must match src/common/audio.rs):
     byte  5      direction: 0 = client -> pico, 1 = pico -> client
     bytes 6..8   reserved, zero
     bytes 8..12  sequence number, u32 little-endian
-    bytes 12..   payload: 720 x i16 LE mono samples @ 48 kHz, or empty
+    bytes 12..   payload: BUFFER_SIZE x i16 LE mono samples @ 48 kHz, or empty
                  (a header-only packet is a keep-alive)
 
 Usage:
@@ -34,7 +34,10 @@ import numpy as np
 import sounddevice as sd
 
 SAMPLE_RATE = 48_000
-BUFFER_SIZE = 720  # samples per block, must match src/common/audio.rs
+# Samples per block, must match src/common/audio.rs. Sized so a packet's IP
+# datagram (payload + 12-byte header + 28 bytes UDP/IP) stays under the
+# 1280-byte MTU of WireGuard/Tailscale tunnels.
+BUFFER_SIZE = 600
 MAGIC = b"PVAU"
 PROTOCOL_VERSION = 1
 DIR_TO_PICO = 0
@@ -42,7 +45,7 @@ DIR_FROM_PICO = 1
 HEADER = struct.Struct("<4sBBHI")  # magic, version, direction, reserved, seq
 PAYLOAD_BYTES = BUFFER_SIZE * 2
 PACKET_BYTES = HEADER.size + PAYLOAD_BYTES
-BLOCK_SECONDS = BUFFER_SIZE / SAMPLE_RATE  # 15 ms
+BLOCK_SECONDS = BUFFER_SIZE / SAMPLE_RATE
 KEEPALIVE_SECONDS = 0.5
 
 

@@ -1,7 +1,7 @@
 //! Full-duplex UDP audio over WiFi.
 //!
 //! I2S microphone → UDP out, UDP in → I2S DAC/amp, both at 48 kHz mono
-//! 16-bit in 720-sample blocks. See `common/audio.rs` for the wire format
+//! 16-bit in `BUFFER_SIZE`-sample blocks. See `common/audio.rs` for the wire format
 //! and `py-client/audio_udp.py` for the matching desktop client — start the
 //! client first; the pico learns where to send from the client's packets.
 //!

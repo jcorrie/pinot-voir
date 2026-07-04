@@ -20,7 +20,7 @@ uv run audio_udp.py <pico-ip> --input-device 1 --output-device 3
 The pico's IP is logged over defmt/probe-rs when it joins the network
 ("Current IPv4 configuration: ...").
 
-Audio is 48 kHz mono 16-bit in 720-sample blocks (15 ms, ~66.7 packets/s,
+Audio is 48 kHz mono 16-bit in 600-sample blocks (12.5 ms, 80 packets/s,
 ~0.96 Mbit/s each way). The wire format is documented in
 `src/common/audio.rs`; both directions share port 1234 and are told apart
 by a direction byte in the 12-byte header, with sequence numbers for loss

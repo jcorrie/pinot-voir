@@ -46,7 +46,7 @@ pub async fn audio_duplex_task(
     port: u16,
 ) -> ! {
     // Socket buffers sized for a few packets in flight each way; the old
-    // 1024-byte rx buffer couldn't hold even one 1452-byte packet.
+    // 1024-byte rx buffer couldn't hold even one full-size audio packet.
     let mut rx_buffer = [0u8; PACKET_BYTES * 4];
     let mut tx_buffer = [0u8; PACKET_BYTES * 4];
     let mut rx_meta = [PacketMetadata::EMPTY; 8];

@@ -24,9 +24,12 @@ use embassy_sync::channel::Channel as SyncChannel;
 use {defmt_rtt as _, panic_probe as _};
 
 /// Samples per audio block (mono, 16-bit).
-/// 720 samples @ 48 kHz = 15 ms per block, and 12 + 1440 bytes per packet —
-/// comfortably under a 1500-byte MTU.
-pub const BUFFER_SIZE: usize = 720;
+/// 600 samples @ 48 kHz = 12.5 ms per block and a 12 + 1200 = 1212-byte UDP
+/// payload, i.e. a 1240-byte IP packet. That fits not just ethernet (1500)
+/// but the 1280-byte MTU of WireGuard/Tailscale tunnels — clients often
+/// reach the pico through one, and anything bigger is silently blackholed
+/// while the small keep-alives still get through.
+pub const BUFFER_SIZE: usize = 600;
 pub const SAMPLE_RATE: u32 = 48_000;
 pub const BLOCK_DURATION_MICROS: u64 = (BUFFER_SIZE as u64 * 1_000_000) / SAMPLE_RATE as u64;
 

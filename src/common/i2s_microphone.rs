@@ -158,6 +158,23 @@ pub async fn i2s_mic_task(
         audio_block.timestamp = Instant::now().as_micros();
         audio_block.update_samples_from_i2s_frames(back_buffer);
 
+        // Wiring diagnostic every ~2 s: max raw word per channel.
+        //   maxL=0 maxR=0        → data line dead (check 3V/GND/DOUT→GPIO20)
+        //   maxL=0 maxR!=0      → mic is on the right channel (SELECT is high, tie to GND)
+        //   maxL varies with sound → healthy
+        if block_counter % 160 == 0 {
+            let mut max_left = 0u32;
+            let mut max_right = 0u32;
+            for pair in back_buffer.chunks_exact(2) {
+                max_left = max_left.max(pair[0]);
+                max_right = max_right.max(pair[1]);
+            }
+            info!(
+                "i2s raw: L[0]={:08x} R[0]={:08x} maxL={:08x} maxR={:08x}",
+                back_buffer[0], back_buffer[1], max_left, max_right
+            );
+        }
+
         // Skip block 1: the back buffer holds nothing on the first pass.
         if block_counter > 1 {
             match audio_channel.try_send(audio_block) {

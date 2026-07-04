@@ -32,14 +32,14 @@ pub async fn i2s_mic_task(audio_channel: &'static MicChannel, mut i2s: PioI2sIn<
     let mut block_counter = 0u32;
     let mut dropped = 0u32;
     loop {
+        // One DMA read per loop iteration: capture into the front buffer
+        // while we process the back buffer the previous iteration filled.
+        // (The old version awaited a second read at the bottom of the loop,
+        // so every other buffer was overwritten unprocessed and the stream
+        // ran at half rate.)
+        let transfer = i2s.read(front_buffer);
+
         let mut audio_block = AudioBlock::new();
-
-        i2s.read(front_buffer).await;
-        mem::swap(&mut back_buffer, &mut front_buffer);
-
-        // Queue next DMA immediately before processing
-        let next_dma = i2s.read(front_buffer);
-
         block_counter += 1;
         audio_block.block_id = block_counter;
         audio_block.timestamp = Instant::now().as_micros();
@@ -50,16 +50,20 @@ pub async fn i2s_mic_task(audio_channel: &'static MicChannel, mut i2s: PioI2sIn<
         // Dropping is the normal state whenever nothing drains the channel
         // (WiFi still connecting, no peer attached), so rate-limit the log
         // to roughly one line every two seconds.
-        match audio_channel.try_send(audio_block) {
-            Ok(_) => {}
-            Err(_) => {
-                dropped += 1;
-                if dropped % 128 == 1 {
-                    info!("Audio channel full, {} blocks dropped so far", dropped);
+        // Skip block 1: the back buffer holds nothing on the first pass.
+        if block_counter > 1 {
+            match audio_channel.try_send(audio_block) {
+                Ok(_) => {}
+                Err(_) => {
+                    dropped += 1;
+                    if dropped % 128 == 1 {
+                        info!("Audio channel full, {} blocks dropped so far", dropped);
+                    }
                 }
             }
         }
 
-        next_dma.await;
+        transfer.await;
+        mem::swap(&mut back_buffer, &mut front_buffer);
     }
 }

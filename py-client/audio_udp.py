@@ -143,6 +143,9 @@ def main():
     parser = argparse.ArgumentParser(description="Duplex UDP audio client for the pico")
     parser.add_argument("pico_ip", nargs="?", help="IP address of the pico")
     parser.add_argument("--port", type=int, default=1234)
+    parser.add_argument("--local-port", type=int, default=0,
+                        help="bind this local UDP port instead of an ephemeral one "
+                             "(useful for tcpdump/firewall debugging)")
     parser.add_argument("--listen-only", action="store_true",
                         help="don't send microphone audio, only keep-alives")
     parser.add_argument("--input-device", default=None,
@@ -173,7 +176,7 @@ def main():
 
     pico_addr = (pico_ip, args.port)
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    sock.bind(("0.0.0.0", 0))  # ephemeral port; the pico replies to it
+    sock.bind(("0.0.0.0", args.local_port))  # the pico replies to this port
     sock.settimeout(2.0)
 
     stats = Stats()
@@ -198,7 +201,11 @@ def main():
         spawn(tx_loop, sock, pico_addr, parse_device(args.input_device), stats)
 
     mode = "listen-only" if args.listen_only else "duplex"
-    print(f"{mode}: {BUFFER_SIZE} samples/block @ {SAMPLE_RATE} Hz <-> {pico_addr[0]}:{pico_addr[1]}")
+    local_port = sock.getsockname()[1]
+    print(
+        f"{mode}: {BUFFER_SIZE} samples/block @ {SAMPLE_RATE} Hz "
+        f"<-> {pico_addr[0]}:{pico_addr[1]} (local port {local_port})"
+    )
 
     start = time.time()
     try:

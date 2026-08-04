@@ -1,14 +1,14 @@
-use crate::common::adc_microphone::AudioBlock;
+use crate::common::audio::AudioBlock;
 use defmt::*;
-use embassy_rp::Peri;
 use embassy_rp::bind_interrupts;
 use embassy_rp::peripherals::USB;
 use embassy_rp::usb::{Driver, InterruptHandler as USBInterruptHandler};
+use embassy_rp::Peri;
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::channel::Channel as SyncChannel;
 use embassy_time::Instant;
-use embassy_usb::UsbDevice;
 use embassy_usb::class::cdc_acm::CdcAcmClass;
+use embassy_usb::UsbDevice;
 use static_cell::StaticCell;
 static CONFIG_DESCRIPTOR: StaticCell<[u8; 256]> = StaticCell::new();
 static BOS_DESCRIPTOR: StaticCell<[u8; 256]> = StaticCell::new();
@@ -23,7 +23,7 @@ bind_interrupts!(struct Irqs {
 pub async fn write_cdc_chunked(
     cdc: &mut CdcAcmClass<'static, Driver<'static, USB>>,
     data: &[u8],
-) -> Result<(), embassy_usb_driver::EndpointError> {
+) -> Result<(), embassy_usb::driver::EndpointError> {
     // CDC full-speed EPs are typically 64 bytes
     let max_packet = 64usize;
     let mut offset = 0usize;
@@ -45,7 +45,7 @@ pub async fn write_cdc_chunked(
 pub fn init_usb(usb: Peri<'static, USB>) -> embassy_usb::Builder<'static, Driver<'static, USB>> {
     let driver = Driver::new(usb, Irqs);
 
-    let mut usb_builder = embassy_usb::Builder::new(
+    let usb_builder = embassy_usb::Builder::new(
         driver,
         {
             let mut cfg = embassy_usb::Config::new(0xc0de, 0xcafe);
@@ -90,9 +90,9 @@ pub async fn cdc_tx_task(
 
         // Drain audio blocks while connected
         loop {
-            let block: AudioBlock = audio_channel.receive().await;
-            let centred_samples = block.centre_samples();
-            let bytes: &[u8] = bytemuck::cast_slice(&centred_samples);
+            let mut block: AudioBlock = audio_channel.receive().await;
+            block.centre_samples();
+            let bytes: &[u8] = bytemuck::cast_slice(&block.samples);
 
             if let Err(e) = write_cdc_chunked(cdc, bytes).await {
                 warn!("CDC write error: {:?}", e);

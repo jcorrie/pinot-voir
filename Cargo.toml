@@ -5,26 +5,26 @@ edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [dependencies]
-embassy-embedded-hal = { version = "0.4.0", features = ["defmt"] }
-embassy-sync = { version = "0.7.1", features = ["defmt"] }
-embassy-executor = { version = "0.8.0", features = [
-    "arch-cortex-m",
+embassy-embedded-hal = { version = "0.6.0", features = ["defmt"] }
+embassy-sync = { version = "0.8.0", features = ["defmt"] }
+embassy-executor = { version = "0.10.0", features = [
+    "platform-cortex-m",
     "executor-thread",
     "executor-interrupt",
     "defmt",
 ] }
-embassy-time = { version = "0.5.0", features = [
+embassy-time = { version = "0.5.1", features = [
     "defmt",
     "defmt-timestamp-uptime",
 ] }
-embassy-rp = { version = "0.7.0", features = [
+embassy-rp = { version = "0.10.0", features = [
     "defmt",
     "unstable-pac",
     "time-driver",
     "critical-section-impl",
     "rp2040",
 ] }
-embassy-net = { version = "0.7.0", features = [
+embassy-net = { version = "0.9.1", features = [
     "defmt",
     "tcp",
     "udp",
@@ -32,19 +32,24 @@ embassy-net = { version = "0.7.0", features = [
     "medium-ethernet",
     "dns",
 ] }
-cyw43 = { version = "0.4.0", features = [
+cyw43 = { version = "0.7.0", features = [
     "defmt",
     "firmware-logs",
     "bluetooth",
 ] }
-cyw43-pio = { version = "0.6.0", features = ["defmt"] }
+cyw43-pio = { version = "0.10.0", features = ["defmt"] }
 
 
 defmt = "1.0.1"
 defmt-rtt = "1.0.0"
 
 # for web request example
-reqwless = { version = "0.13.0", features = ["defmt"] }
+reqwless = { version = "0.14.0", features = ["defmt"] }
+# Not used directly. embedded-tls 0.18 (pinned by reqwless 0.14) uses der's
+# SequenceOf/SetOf without enabling der's `heapless` feature, so it fails to build.
+# Fixed in embedded-tls 0.19, which reqwless 0.14 can't take. Turn the feature on
+# here and let feature unification apply it. Drop this once reqwless moves to 0.19.
+der = { version = "0.8", default-features = false, features = ["heapless"] }
 
 
 cortex-m = { version = "0.7.6", features = ["inline-asm"] }
@@ -52,15 +57,15 @@ cortex-m-rt = "0.7.0"
 panic-probe = { version = "1.0.0", features = ["print-defmt"] }
 embedded-graphics = "0.8.1"
 st7789 = "0.6.1"
-heapless = "0.8"
+heapless = "0.9"
 
 
 embedded-hal-1 = { package = "embedded-hal", version = "1.0" }
-static_cell = { version = "2.1", features = ["nightly"] }
+static_cell = { version = "2.1" }
 portable-atomic = { version = "1.5", features = ["critical-section"] }
 rand = { version = "0.8.5", default-features = false }
 
-picoserve = { version = "0.16.0", features = ["embassy", "defmt"] }
+picoserve = { version = "0.19.0", features = ["embassy", "defmt", "json"] }
 embassy-dht = { version = "0.1.9", default-features = false, features = [
     "dht22",
     "dht11",
@@ -69,15 +74,15 @@ embassy-dht = { version = "0.1.9", default-features = false, features = [
 ] }
 serde-json-core = "0.6.0"
 serde = { version = "1.0.219", default-features = false, features = ["derive"] }
-embedded-io-async = "0.6.1"
+embedded-io-async = "0.7.0"
 bytemuck = "1.23.2"
-embassy-usb-logger = "0.5.1"
-embassy-usb = { version = "0.5.1", features = ["defmt"] }
+embassy-usb-logger = "0.6.0"
+embassy-usb = { version = "0.6.0", features = ["defmt"] }
 log = "0.4.27"
-embassy-usb-driver = "0.2.0"
+embassy-usb-driver = "0.2.2"
 
 [patch.crates-io]
-embassy-dht = { git = "https://github.com/jcorrie/embassy-dht", branch = "update-deps" }
+embassy-dht = { git = "https://github.com/jcorrie/embassy-dht", branch = "dhtsensor-trait" }
 
 
 [profile.release]

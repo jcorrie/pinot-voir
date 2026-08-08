@@ -15,10 +15,6 @@ static BOS_DESCRIPTOR: StaticCell<[u8; 256]> = StaticCell::new();
 static CONTROL_BUF: StaticCell<[u8; MAX_USB_BUF]> = StaticCell::new();
 const MAX_USB_BUF: usize = 64;
 
-bind_interrupts!(struct Irqs {
-    USBCTRL_IRQ => USBInterruptHandler<USB>;
-});
-
 // ---------- Helpers ----------
 pub async fn write_cdc_chunked(
     cdc: &mut CdcAcmClass<'static, Driver<'static, USB>>,
@@ -43,7 +39,7 @@ pub async fn write_cdc_chunked(
 }
 
 pub fn init_usb(usb: Peri<'static, USB>) -> embassy_usb::Builder<'static, Driver<'static, USB>> {
-    let driver = Driver::new(usb, Irqs);
+    let driver = Driver::new(usb, crate::common::irqs::Irqs);
 
     let mut usb_builder = embassy_usb::Builder::new(
         driver,

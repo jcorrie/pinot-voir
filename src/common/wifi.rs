@@ -2,6 +2,7 @@ use crate::common::shared_functions::{EnvironmentVariables, blink_n_times};
 
 use cyw43::Control;
 use cyw43::JoinOptions;
+use cyw43::{A4, Aligned, aligned_bytes};
 use cyw43_pio::{DEFAULT_CLOCK_DIVIDER, PioSpi};
 use defmt::info;
 use embassy_executor::Spawner;
@@ -20,13 +21,9 @@ use static_cell::StaticCell;
 
 pub const WEB_TASK_POOL_SIZE: usize = 12;
 
-bind_interrupts!(struct Irqs {
-    PIO0_IRQ_0 => InterruptHandler<PIO0>;
-});
-
 #[embassy_executor::task]
 async fn wifi_task(
-    runner: cyw43::Runner<'static, Output<'static>, PioSpi<'static, PIO0, 0, DMA_CH0>>,
+    runner: cyw43::Runner<'static, cyw43::SpiBus<Output<'static>, PioSpi<'static, PIO0, 0>>>,
 ) -> ! {
     runner.run().await
 }
@@ -58,14 +55,16 @@ impl EmbassyPicoWifiCore {
         dma_ch0: Peri<'static, DMA_CH0>,
         spawner: Spawner,
     ) -> Self {
-        let fw: &[u8];
+        let fw: &Aligned<A4, [u8]>;
         let clm: &[u8];
+        // cyw43 0.7 no longer bundles the RP2040 NVRAM blob; it has to be passed to `new`.
+        let nvram: &Aligned<A4, [u8]> = aligned_bytes!("../../cyw43-firmware/nvram_rp2040.bin");
 
         pub const FLASH_NEW_FIRMWARE: bool = true;
 
         match FLASH_NEW_FIRMWARE {
             true => {
-                fw = include_bytes!("../../cyw43-firmware/43439A0.bin");
+                fw = aligned_bytes!("../../cyw43-firmware/43439A0.bin");
                 clm = include_bytes!("../../cyw43-firmware/43439A0_clm.bin");
             }
             false => {
@@ -73,7 +72,11 @@ impl EmbassyPicoWifiCore {
                 // at hardcoded addresses, instead of baking them into the program with `include_bytes!`:
                 //     probe-rs download 43439A0.bin --binary-format bin --chip RP2040 --base-address 0x10100000
                 //     probe-rs download 43439A0_clm.bin --binary-format bin --chip RP2040 --base-address 0x10140000
-                fw = unsafe { core::slice::from_raw_parts(0x10100000 as *const u8, 231077) };
+                // SAFETY: 0x10100000 is 4-byte aligned, which is what `Aligned<A4, _>` requires.
+                fw = unsafe {
+                    &*(core::slice::from_raw_parts(0x10100000 as *const u8, 231077) as *const [u8]
+                        as *const Aligned<A4, [u8]>)
+                };
                 clm = unsafe { core::slice::from_raw_parts(0x10140000 as *const u8, 984) };
             }
         }
@@ -81,7 +84,7 @@ impl EmbassyPicoWifiCore {
         let pwr = Output::new(pin_23, Level::Low);
         let cs = Output::new(pin_25, Level::High);
         let config = Config::dhcpv4(Default::default());
-        let mut pio = Pio::new(pio_0, Irqs);
+        let mut pio = Pio::new(pio_0, crate::common::irqs::Irqs);
         let spi = PioSpi::new(
             &mut pio.common,
             pio.sm0,
@@ -90,14 +93,12 @@ impl EmbassyPicoWifiCore {
             cs,
             pin_24,
             pin_29,
-            dma_ch0,
+            embassy_rp::dma::Channel::new(dma_ch0, crate::common::irqs::Irqs),
         );
         static STATE: StaticCell<cyw43::State> = StaticCell::new();
         let state = STATE.init(cyw43::State::new());
-        let (net_device, mut control, runner) = cyw43::new(state, pwr, spi, fw).await;
-        spawner
-            .spawn(wifi_task(runner))
-            .expect("failed to spawn wifi_task");
+        let (net_device, mut control, runner) = cyw43::new(state, pwr, spi, fw, nvram).await;
+        spawner.spawn(defmt::unwrap!(wifi_task(runner)));
 
         control.init(clm).await;
         control
@@ -115,9 +116,7 @@ impl EmbassyPicoWifiCore {
             seed,
         );
 
-        spawner
-            .spawn(net_task(runner))
-            .expect("failed to spawn net_task");
+        spawner.spawn(defmt::unwrap!(net_task(runner)));
 
         Self {
             control,
@@ -163,7 +162,7 @@ impl EmbassyPicoWifiCore {
         &mut self,
         wifi_ssid: &str,
         wifi_password: &str,
-    ) -> Result<(), cyw43::ControlError> {
+    ) -> Result<(), cyw43::JoinError> {
         info!("Joining network: {}", wifi_ssid);
         info!("Using password: {}", wifi_password);
         while let Err(err) = self
@@ -171,7 +170,7 @@ impl EmbassyPicoWifiCore {
             .join(wifi_ssid, JoinOptions::new(wifi_password.as_bytes()))
             .await
         {
-            info!("join failed with status={}", err.status);
+            info!("join failed: {}", err);
         }
         info!("waiting for link...");
         self.stack.wait_link_up().await;
@@ -242,7 +241,7 @@ pub async fn wifi_autoheal_task(
                 .await
             {
                 Ok(_) => info!("Rejoined WiFi."),
-                Err(e) => info!("WiFi rejoin failed: status={}", e.status),
+                Err(e) => info!("WiFi rejoin failed: {}", e),
             }
         } else {
             info!("WiFi is connected");

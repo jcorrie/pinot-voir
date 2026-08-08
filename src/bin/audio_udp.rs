@@ -1,7 +1,5 @@
 #![no_std]
 #![no_main]
-#![feature(type_alias_impl_trait)]
-#![feature(impl_trait_in_assoc_type)]
 
 use defmt::*;
 use embassy_executor::Executor;
@@ -19,7 +17,6 @@ use embassy_time::{Duration, Instant, Timer};
 use pinot_voir::common::adc_microphone::{adc_task, AudioBlock, AUDIO_BUFFER_SIZE};
 use pinot_voir::common::shared_functions::EnvironmentVariables;
 use pinot_voir::common::wifi::{EmbassyPicoWifiCore, SharedEmbassyWifiPicoCore};
-use static_cell::make_static;
 use static_cell::StaticCell;
 use {defmt_rtt as _, panic_probe as _};
 
@@ -34,7 +31,7 @@ static AUDIO_CHANNEL: SyncChannel<CriticalSectionRawMutex, AudioBlock, 4> = Sync
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
     let environment_variables: &'static EnvironmentVariables =
-        make_static!(EnvironmentVariables::new());
+        picoserve::make_static!(EnvironmentVariables, EnvironmentVariables::new());
 
     let p = embassy_rp::init(Default::default());
 
@@ -45,7 +42,7 @@ async fn main(spawner: Spawner) {
         move || {
             let executor1 = EXECUTOR1.init(Executor::new());
             executor1.run(|spawner| {
-                unwrap!(spawner.spawn(adc_task(&AUDIO_CHANNEL, p.ADC, p.DMA_CH1, p.PIN_26)));
+                spawner.spawn(defmt::unwrap!(adc_task(&AUDIO_CHANNEL, p.ADC, p.DMA_CH1, p.PIN_26)));
             });
         },
     );
@@ -64,12 +61,12 @@ async fn main(spawner: Spawner) {
     .await;
 
     let shared_wifi_core: SharedEmbassyWifiPicoCore =
-        SharedEmbassyWifiPicoCore(make_static!(Mutex::new(embassy_pico_wifi_core)));
+        SharedEmbassyWifiPicoCore(picoserve::make_static!(Mutex<CriticalSectionRawMutex, EmbassyPicoWifiCore>, Mutex::new(embassy_pico_wifi_core)));
 
     // ---------- Spawn UDP task ----------
     let target_ip = IpAddress::v4(255, 255, 255, 255);
     let port = 1234;
-    unwrap!(spawner.spawn(udp_tx_task(
+    spawner.spawn(defmt::unwrap!(udp_tx_task(
         &AUDIO_CHANNEL,
         shared_wifi_core,
         target_ip,

@@ -1,7 +1,5 @@
 #![no_std]
 #![no_main]
-#![feature(type_alias_impl_trait)]
-#![feature(impl_trait_in_assoc_type)]
 
 use defmt::info;
 use embassy_executor::Spawner;
@@ -15,13 +13,6 @@ use embassy_usb::class::cdc_acm::{CdcAcmClass, State};
 use embassy_usb_driver::EndpointError;
 use static_cell::StaticCell;
 use {defmt_rtt as _, panic_probe as _};
-
-bind_interrupts!(struct Irqs {
-    USBCTRL_IRQ => USBInterruptHandler<USB>;
-});
-bind_interrupts!(struct IrqsADC {
-    ADC_IRQ_FIFO => ADCInterruptHandler;
-});
 
 async fn write_cdc_chunked<'a>(
     cdc: &mut CdcAcmClass<'static, Driver<'static, USB>>,
@@ -57,7 +48,7 @@ async fn main(spawner: Spawner) {
     static BOS_DESCRIPTOR: StaticCell<[u8; 256]> = StaticCell::new();
     static CONTROL_BUF: StaticCell<[u8; 64]> = StaticCell::new();
 
-    let driver = Driver::new(p.USB, Irqs);
+    let driver = Driver::new(p.USB, pinot_voir::common::irqs::Irqs);
 
     let mut usb_builder = embassy_usb::Builder::new(
         driver,
@@ -79,11 +70,11 @@ async fn main(spawner: Spawner) {
     let mut cdc = CdcAcmClass::new(&mut usb_builder, STATE.init(State::new()), 64);
     let usb = usb_builder.build();
 
-    spawner.spawn(usb_task(usb)).unwrap();
+    spawner.spawn(defmt::unwrap!(usb_task(usb)));
 
     // ADC setup
-    let mut adc = Adc::new(p.ADC, IrqsADC, Config::default());
-    let mut dma = p.DMA_CH0;
+    let mut adc = Adc::new(p.ADC, pinot_voir::common::irqs::Irqs, Config::default());
+    let mut dma = embassy_rp::dma::Channel::new(p.DMA_CH0, pinot_voir::common::irqs::Irqs);
     let mut p26 = Channel::new_pin(p.PIN_26, Pull::None);
 
     const BUFFER_SIZE: usize = 1024;
@@ -95,7 +86,7 @@ async fn main(spawner: Spawner) {
         loop {
             let mut audio_buffer: [u16; BUFFER_SIZE] = [0_u16; BUFFER_SIZE];
             if let Ok(_) = adc
-                .read_many(&mut p26, &mut audio_buffer, ADC_DIV, dma.reborrow())
+                .read_many(&mut p26, &mut audio_buffer, ADC_DIV, &mut dma)
                 .await
             {
                 let audio_bytes: &[u8] = bytemuck::cast_slice(&audio_buffer);

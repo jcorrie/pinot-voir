@@ -2,7 +2,6 @@
 
 #![no_std]
 #![no_main]
-#![feature(type_alias_impl_trait)]
 #![allow(async_fn_in_trait)]
 
 use defmt::{error, info};
@@ -12,6 +11,7 @@ use embassy_net::dns::DnsSocket;
 use embassy_net::tcp::client::TcpConnection;
 use embassy_net::tcp::client::{TcpClient, TcpClientState};
 use embassy_rp::clocks::RoscRng;
+use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::mutex::Mutex;
 use embassy_time::{Delay, Duration, Timer};
 use pinot_voir::common::shared_functions::{blink_n_times, EnvironmentVariables};
@@ -22,14 +22,13 @@ use pinot_voir::common::wifi::{
 use reqwless::client::{HttpClient, HttpConnection, TlsConfig, TlsVerify};
 use reqwless::request::{Method, RequestBuilder};
 use reqwless::response::Response;
-use static_cell::make_static;
 
 use {defmt_rtt as _, panic_probe as _};
 
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
     let environment_variables: &'static EnvironmentVariables =
-        make_static!(EnvironmentVariables::new());
+        picoserve::make_static!(EnvironmentVariables, EnvironmentVariables::new());
     let p = embassy_rp::init(Default::default());
     // Wifi prelude
     info!("Hello World!");
@@ -47,7 +46,7 @@ async fn main(spawner: Spawner) {
     .await;
 
     let shared_wifi_core: SharedEmbassyWifiPicoCore =
-        SharedEmbassyWifiPicoCore(make_static!(Mutex::new(embassy_pico_wifi_core)));
+        SharedEmbassyWifiPicoCore(picoserve::make_static!(Mutex<CriticalSectionRawMutex, EmbassyPicoWifiCore>, Mutex::new(embassy_pico_wifi_core)));
 
     // let wifi = wifi_autoheal_task(shared_wifi_core, environment_variables);
     blink_n_times(&mut shared_wifi_core.0.lock().await.control, 1).await;

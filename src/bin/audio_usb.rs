@@ -1,7 +1,5 @@
 #![no_std]
 #![no_main]
-#![feature(type_alias_impl_trait)]
-#![feature(impl_trait_in_assoc_type)]
 
 use defmt::*;
 use embassy_executor::Executor;
@@ -43,7 +41,7 @@ fn main() -> ! {
         move || {
             let executor1 = EXECUTOR1.init(Executor::new());
             executor1.run(|spawner| {
-                unwrap!(spawner.spawn(adc_task(&AUDIO_CHANNEL, p.ADC, p.DMA_CH1, p.PIN_26)));
+                spawner.spawn(defmt::unwrap!(adc_task(&AUDIO_CHANNEL, p.ADC, p.DMA_CH1, p.PIN_26)));
             });
         },
     );
@@ -62,7 +60,7 @@ fn main() -> ! {
         let usb = usb_builder.build();
 
         // Run USB device + CDC TX task
-        unwrap!(spawner.spawn(usb_device_task(usb)));
-        unwrap!(spawner.spawn(cdc_tx_task(&AUDIO_CHANNEL, cdc)));
+        spawner.spawn(defmt::unwrap!(usb_device_task(usb)));
+        spawner.spawn(defmt::unwrap!(cdc_tx_task(&AUDIO_CHANNEL, cdc)));
     });
 }

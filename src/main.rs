@@ -12,13 +12,9 @@ use embassy_time::{Duration, Timer};
 use static_cell::StaticCell;
 use {defmt_rtt as _, panic_probe as _};
 
-bind_interrupts!(struct Irqs {
-    PIO0_IRQ_0 => InterruptHandler<PIO0>;
-});
-
 #[embassy_executor::task]
 async fn cyw43_task(
-    runner: cyw43::Runner<'static, Output<'static>, PioSpi<'static, PIO0, 0, DMA_CH0>>,
+    runner: cyw43::Runner<'static, cyw43::SpiBus<Output<'static>, PioSpi<'static, PIO0, 0>>>,
 ) -> ! {
     runner.run().await
 }
@@ -26,8 +22,10 @@ async fn cyw43_task(
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
     let p = embassy_rp::init(Default::default());
-    let fw = include_bytes!("../cyw43-firmware/43439A0.bin");
+    let fw = cyw43::aligned_bytes!("../cyw43-firmware/43439A0.bin");
     let clm = include_bytes!("../cyw43-firmware/43439A0_clm.bin");
+    // cyw43 0.7 requires the NVRAM blob to be supplied explicitly.
+    let nvram = cyw43::aligned_bytes!("../cyw43-firmware/nvram_rp2040.bin");
 
     // To make flashing faster for development, you may want to flash the firmwares independently
     // at hardcoded addresses, instead of baking them into the program with `include_bytes!`:
@@ -38,7 +36,7 @@ async fn main(spawner: Spawner) {
 
     let pwr = Output::new(p.PIN_23, Level::Low);
     let cs = Output::new(p.PIN_25, Level::High);
-    let mut pio = Pio::new(p.PIO0, Irqs);
+    let mut pio = Pio::new(p.PIO0, pinot_voir::common::irqs::Irqs);
     let spi = PioSpi::new(
         &mut pio.common,
         pio.sm0,
@@ -47,13 +45,13 @@ async fn main(spawner: Spawner) {
         cs,
         p.PIN_24,
         p.PIN_29,
-        p.DMA_CH0,
+        embassy_rp::dma::Channel::new(p.DMA_CH0, pinot_voir::common::irqs::Irqs),
     );
 
     static STATE: StaticCell<cyw43::State> = StaticCell::new();
     let state = STATE.init(cyw43::State::new());
-    let (_net_device, mut control, runner) = cyw43::new(state, pwr, spi, fw).await;
-    unwrap!(spawner.spawn(cyw43_task(runner)));
+    let (_net_device, mut control, runner) = cyw43::new(state, pwr, spi, fw, nvram).await;
+    spawner.spawn(defmt::unwrap!(cyw43_task(runner)));
 
     control.init(clm).await;
     control

@@ -2,7 +2,6 @@
 
 #![no_std]
 #![no_main]
-#![feature(type_alias_impl_trait)]
 #![allow(async_fn_in_trait)]
 
 use defmt::{error, info};
@@ -19,14 +18,13 @@ use pinot_voir::common::wifi::{EmbassyPicoWifiCore, HttpBuffers};
 use reqwless::client::{HttpClient, HttpConnection, TlsConfig, TlsVerify};
 use reqwless::request::{Method, RequestBuilder};
 use reqwless::response::Response;
-use static_cell::make_static;
 
 use {defmt_rtt as _, panic_probe as _};
 
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
     let environment_variables: &'static EnvironmentVariables =
-        make_static!(EnvironmentVariables::new());
+        picoserve::make_static!(EnvironmentVariables, EnvironmentVariables::new());
     let p = embassy_rp::init(Default::default());
     // Wifi prelude
     info!("Hello World!");

@@ -39,6 +39,7 @@ impl EnvironmentVariables {
         let mut password: Option<&str> = None;
         let mut supabase_url: Option<&str> = None;
         let mut supabase_key: Option<&str> = None;
+        let mut server_url: Option<&str> = None;
 
         for line in env_file.lines() {
             if let Some((key, value)) = line.split_once('=') {
@@ -47,6 +48,7 @@ impl EnvironmentVariables {
                     "PASSWORD" => password = Some(value),
                     "SUPABASE_URL" => supabase_url = Some(value),
                     "SUPABASE_KEY" => supabase_key = Some(value),
+                    "SERVER_URL" => server_url = Some(value),
                     _ => {}
                 }
             }

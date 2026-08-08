@@ -15,15 +15,15 @@ use picoserve::extract::Json;
 use picoserve::extract::State;
 use pinot_voir::common::dht22_tools::DHT22;
 use pinot_voir::common::sensor_tools::SensorState;
-use pinot_voir::common::shared_functions::{EnvironmentVariables, blink_n_times};
+use pinot_voir::common::shared_functions::{blink_n_times, EnvironmentVariables};
 use pinot_voir::common::wifi::{
-    EmbassyPicoWifiCore, SharedEmbassyWifiPicoCore, WEB_TASK_POOL_SIZE, wifi_autoheal_task,
+    wifi_autoheal_task, EmbassyPicoWifiCore, SharedEmbassyWifiPicoCore, WEB_TASK_POOL_SIZE,
 };
 
 use picoserve::{
-    AppRouter, AppWithStateBuilder,
     response::DebugValue,
-    routing::{PathRouter, get, parse_path_segment},
+    routing::{get, parse_path_segment, PathRouter},
+    AppRouter, AppWithStateBuilder,
 };
 
 use static_cell::make_static;
@@ -171,21 +171,18 @@ async fn main(spawner: Spawner) {
 
     info!("Starting web server");
 
-    let config = make_static!(
-        picoserve::Config::new(picoserve::Timeouts {
-            start_read_request: Some(Duration::from_secs(5)),
-            persistent_start_read_request: Some(Duration::from_secs(1)),
-            read_request: Some(Duration::from_secs(1)),
-            write: Some(Duration::from_secs(1)),
-        })
-        .keep_connection_alive()
-    );
+    let config = make_static!(picoserve::Config::new(picoserve::Timeouts {
+        start_read_request: Some(Duration::from_secs(5)),
+        persistent_start_read_request: Some(Duration::from_secs(1)),
+        read_request: Some(Duration::from_secs(1)),
+        write: Some(Duration::from_secs(1)),
+    })
+    .keep_connection_alive());
 
     let shared_wifi_core: SharedEmbassyWifiPicoCore =
         SharedEmbassyWifiPicoCore(make_static!(Mutex::new(embassy_pico_wifi_core)));
     let shared_sensor = SharedSensor(make_static!(Mutex::new(DHT22::new(p.PIN_16, Delay))));
     let shared_sensor_state = SharedSensorsState(make_static!(Mutex::new(SensorState::new())));
-
 
     // for some reason, idk why, I can only spawn one less than the pool size
     // otherwise it panics

@@ -67,7 +67,7 @@ async fn main(spawner: Spawner) {
 
     let trap_pin_1 = Input::new(p.PIN_28, Pull::Up);
 
-    let mut url_string: heapless::String<32> = String::<32>::new();
+    let mut url_string: heapless::String<128> = String::<128>::new();
     let base_url_string = environment_variables.server_url;
     write!(url_string, "{base_url_string}/api/utils/trap_trigger/1")
         .expect("Failed to write server url string.");

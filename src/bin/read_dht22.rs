@@ -5,11 +5,9 @@ use cyw43_pio::PioSpi;
 use embassy_dht::dht22::DHT22;
 
 use embassy_executor::Spawner;
-use embassy_rp::bind_interrupts;
 use embassy_rp::gpio::Output;
-use embassy_rp::peripherals::{DMA_CH0, PIO0};
+use embassy_rp::peripherals::PIO0;
 
-use embassy_rp::pio::InterruptHandler;
 use embassy_time::{Delay, Duration, Timer};
 use {defmt_rtt as _, panic_probe as _};
 

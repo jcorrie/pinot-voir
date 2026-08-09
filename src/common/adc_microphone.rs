@@ -1,7 +1,6 @@
 use defmt::*;
 use embassy_rp::Peri;
-use embassy_rp::adc::{Adc, Channel, Config, InterruptHandler as ADCInterruptHandler};
-use embassy_rp::bind_interrupts;
+use embassy_rp::adc::{Adc, Channel, Config};
 use embassy_rp::gpio::Pull;
 use embassy_rp::peripherals::{ADC, DMA_CH1, PIN_26};
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;

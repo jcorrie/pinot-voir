@@ -4,3 +4,4 @@ src/secrets/
 data/
 __pycache__/
 .venv/
+.claude

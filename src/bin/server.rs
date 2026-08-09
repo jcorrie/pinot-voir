@@ -15,7 +15,7 @@ use pinot_voir::common::dht22_tools::DHT22;
 use pinot_voir::common::sensor_tools::SensorState;
 use pinot_voir::common::shared_functions::{blink_n_times, EnvironmentVariables};
 use pinot_voir::common::wifi::{
-    wifi_autoheal_task, EmbassyPicoWifiCore, SharedEmbassyWifiPicoCore, WEB_TASK_POOL_SIZE,
+    EmbassyPicoWifiCore, SharedEmbassyWifiPicoCore, WEB_TASK_POOL_SIZE,
 };
 
 use picoserve::{

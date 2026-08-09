@@ -1,9 +1,8 @@
 use crate::common::adc_microphone::AudioBlock;
 use defmt::*;
 use embassy_rp::Peri;
-use embassy_rp::bind_interrupts;
 use embassy_rp::peripherals::USB;
-use embassy_rp::usb::{Driver, InterruptHandler as USBInterruptHandler};
+use embassy_rp::usb::Driver;
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::channel::Channel as SyncChannel;
 use embassy_time::Instant;
@@ -41,7 +40,7 @@ pub async fn write_cdc_chunked(
 pub fn init_usb(usb: Peri<'static, USB>) -> embassy_usb::Builder<'static, Driver<'static, USB>> {
     let driver = Driver::new(usb, crate::common::irqs::Irqs);
 
-    let mut usb_builder = embassy_usb::Builder::new(
+    let usb_builder = embassy_usb::Builder::new(
         driver,
         {
             let mut cfg = embassy_usb::Config::new(0xc0de, 0xcafe);

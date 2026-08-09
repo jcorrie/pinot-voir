@@ -4,24 +4,18 @@
 #![no_main]
 #![allow(async_fn_in_trait)]
 
-use defmt::{error, info};
-use embassy_dht::dht22::DHT22;
+use defmt::info;
 use embassy_executor::Spawner;
 use embassy_net::dns::DnsSocket;
-use embassy_net::tcp::client::TcpConnection;
 use embassy_net::tcp::client::{TcpClient, TcpClientState};
 use embassy_rp::clocks::RoscRng;
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::mutex::Mutex;
-use embassy_time::{Delay, Duration, Timer};
 use pinot_voir::common::shared_functions::{blink_n_times, EnvironmentVariables};
-use pinot_voir::common::supabase::{construct_post_request_arguments, read_http_response};
 use pinot_voir::common::wifi::{
-    wifi_autoheal_task, EmbassyPicoWifiCore, HttpBuffers, SharedEmbassyWifiPicoCore,
+    EmbassyPicoWifiCore, HttpBuffers, SharedEmbassyWifiPicoCore,
 };
-use reqwless::client::{HttpClient, HttpConnection, TlsConfig, TlsVerify};
-use reqwless::request::{Method, RequestBuilder};
-use reqwless::response::Response;
+use reqwless::client::{HttpClient, TlsConfig, TlsVerify};
 
 use {defmt_rtt as _, panic_probe as _};
 
@@ -33,7 +27,7 @@ async fn main(spawner: Spawner) {
     // Wifi prelude
     info!("Hello World!");
 
-    let mut embassy_pico_wifi_core = EmbassyPicoWifiCore::connect_to_network(
+    let embassy_pico_wifi_core = EmbassyPicoWifiCore::connect_to_network(
         p.PIN_23,
         p.PIN_24,
         p.PIN_25,
@@ -64,7 +58,7 @@ async fn main(spawner: Spawner) {
     let client_state: TcpClientState<1, 1024, 1024> = TcpClientState::<1, 1024, 1024>::new();
     let tcp_client = TcpClient::new(shared_wifi_core.0.lock().await.stack, &client_state);
     let dns_client = DnsSocket::new(shared_wifi_core.0.lock().await.stack);
-    let mut http_client = HttpClient::new_with_tls(&tcp_client, &dns_client, tls_config);
+    let _http_client = HttpClient::new_with_tls(&tcp_client, &dns_client, tls_config);
 
     // let pin = Input::new(p.PIN_28, Pull::Up);
 

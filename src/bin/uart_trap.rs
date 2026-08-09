@@ -72,8 +72,9 @@ async fn main(spawner: Spawner) {
     write!(url_string, "{base_url_string}/api/utils/trap_trigger/1")
         .expect("Failed to write server url string.");
     loop {
+        // info!(&url_string.as_str());
         // if trap_pin_1.is_low() {
-        let mut request = match http_client.request(Method::GET, &url_string).await {
+        let mut request = match http_client.request(Method::GET, &url_string.as_str()).await {
             Ok(req) => req,
             Err(e) => {
                 error!("Failed to make HTTP request: {:?}", e);

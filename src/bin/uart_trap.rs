@@ -4,6 +4,7 @@
 #![no_main]
 #![allow(async_fn_in_trait)]
 
+use core::fmt::Write;
 use defmt::{dbg, error, info};
 use embassy_executor::Spawner;
 use embassy_net::dns::DnsSocket;
@@ -13,6 +14,7 @@ use embassy_rp::gpio::{Input, Pull};
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::mutex::Mutex;
 use embassy_time::{Duration, Timer};
+use heapless::String;
 use pinot_voir::common::shared_functions::{blink_n_times, EnvironmentVariables};
 use pinot_voir::common::wifi::{EmbassyPicoWifiCore, HttpBuffers, SharedEmbassyWifiPicoCore};
 use reqwless::client::{HttpClient, HttpConnection, TlsConfig, TlsVerify};
@@ -65,30 +67,31 @@ async fn main(spawner: Spawner) {
 
     let trap_pin_1 = Input::new(p.PIN_28, Pull::Up);
 
+    let mut url_string: heapless::String<32> = String::<32>::new();
+    let base_url_string = environment_variables.server_url;
+    write!(url_string, "{base_url_string}/api/utils/trap_trigger/1")
+        .expect("Failed to write server url string.");
     loop {
-        if trap_pin_1.is_low() {
-            let mut request = match http_client
-                .request(Method::GET, environment_variables.supabase_url)
-                .await
-            {
-                Ok(req) => req,
-                Err(e) => {
-                    error!("Failed to make HTTP request: {:?}", e);
-                    return; // handle the error
+        // if trap_pin_1.is_low() {
+        let mut request = match http_client.request(Method::GET, &url_string).await {
+            Ok(req) => req,
+            Err(e) => {
+                error!("Failed to make HTTP request: {:?}", e);
+                return; // handle the error
+            }
+        };
+        let response: Response<'_, '_, HttpConnection<'_, TcpConnection<'_, 1, 1024, 1024>>> =
+            match request.send(&mut http_buffers.rx_buffer).await {
+                Ok(resp) => resp,
+                Err(_e) => {
+                    error!("Failed to send HTTP request");
+                    return; // handle the error;
                 }
             };
-            let response: Response<'_, '_, HttpConnection<'_, TcpConnection<'_, 1, 1024, 1024>>> =
-                match request.send(&mut http_buffers.rx_buffer).await {
-                    Ok(resp) => resp,
-                    Err(_e) => {
-                        error!("Failed to send HTTP request");
-                        return; // handle the error;
-                    }
-                };
-            dbg!(&response);
-        } else {
-            info!("No trigger");
-        }
+        dbg!(&response);
+        // } else {
+        //     info!("No trigger");
+        // }
         Timer::after(Duration::from_secs(1)).await;
     }
 }

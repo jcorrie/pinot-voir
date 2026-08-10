@@ -1,18 +1,18 @@
-use crate::common::shared_functions::{EnvironmentVariables, blink_n_times};
+use crate::common::shared_functions::{blink_n_times, EnvironmentVariables};
 
 use cyw43::Control;
 use cyw43::JoinOptions;
-use cyw43::{A4, Aligned, aligned_bytes};
-use cyw43_pio::{DEFAULT_CLOCK_DIVIDER, PioSpi};
+use cyw43::{aligned_bytes, Aligned, A4};
+use cyw43_pio::{PioSpi, DEFAULT_CLOCK_DIVIDER};
 use defmt::info;
 use embassy_executor::Spawner;
 use embassy_net::dns::DnsQueryType;
 use embassy_net::{Config, Stack, StackResources};
 use embassy_rp::clocks::RoscRng;
 use embassy_rp::gpio::{Level, Output};
-use embassy_rp::Peri;
 use embassy_rp::peripherals::{DMA_CH0, PIN_23, PIN_24, PIN_25, PIN_29, PIO0};
 use embassy_rp::pio::Pio;
+use embassy_rp::Peri;
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, mutex::Mutex};
 use embassy_time::{Duration, Timer};
 use reqwless::client::TlsConfig;
@@ -101,7 +101,7 @@ impl EmbassyPicoWifiCore {
 
         control.init(clm).await;
         control
-            .set_power_management(cyw43::PowerManagementMode::PowerSave)
+            .set_power_management(cyw43::PowerManagementMode::None)
             .await;
 
         static RESOURCES: StaticCell<StackResources<WEB_TASK_POOL_SIZE>> = StaticCell::new();

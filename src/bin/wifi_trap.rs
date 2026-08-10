@@ -5,7 +5,7 @@
 #![allow(async_fn_in_trait)]
 
 use core::fmt::Write;
-use defmt::{dbg, error, info};
+use defmt::{dbg, error, info, Format};
 use embassy_executor::Spawner;
 use embassy_net::dns::DnsSocket;
 use embassy_net::tcp::client::{TcpClient, TcpClientState, TcpConnection};
@@ -65,33 +65,47 @@ async fn main(spawner: Spawner) {
     let dns_client = DnsSocket::new(shared_wifi_core.0.lock().await.stack);
     let mut http_client = HttpClient::new_with_tls(&tcp_client, &dns_client, tls_config);
 
-    let trap_pin_1 = Input::new(p.PIN_28, Pull::Up);
+    let mut trap_pin_1 = Input::new(p.PIN_6, Pull::Up);
 
+    let addr = shared_wifi_core
+        .0
+        .lock()
+        .await
+        .stack
+        .config_v4()
+        .unwrap()
+        .address
+        .address(); // core::net::Ipv4Addr
+    let mut buf: heapless::String<16> = heapless::String::new();
+    write!(buf, "{}", addr).unwrap();
+    let ip: &str = buf.as_str();
     let mut url_string: heapless::String<128> = String::<128>::new();
     let base_url_string = environment_variables.server_url;
-    write!(url_string, "{base_url_string}/api/utils/trap_trigger/1")
+    write!(url_string, "{base_url_string}/api/utils/trap_trigger/{ip}")
         .expect("Failed to write server url string.");
     loop {
-        // if trap_pin_1.is_low() {
-        let mut request = match http_client.request(Method::GET, &url_string.as_str()).await {
-            Ok(req) => req,
-            Err(e) => {
-                error!("Failed to make HTTP request: {:?}", e);
-                return; // handle the error
-            }
-        };
-        let response: Response<'_, '_, HttpConnection<'_, TcpConnection<'_, 1, 1024, 1024>>> =
-            match request.send(&mut http_buffers.rx_buffer).await {
-                Ok(resp) => resp,
-                Err(_e) => {
-                    error!("Failed to send HTTP request");
-                    return; // handle the error;
+        trap_pin_1.wait_for_rising_edge().await;
+        Timer::after_millis(10).await;
+        if trap_pin_1.is_high() {
+            info!("Trigger");
+            let mut request = match http_client.request(Method::GET, &url_string.as_str()).await {
+                Ok(req) => req,
+                Err(e) => {
+                    error!("Failed to make HTTP request: {:?}", e);
+                    return; // handle the error
                 }
             };
-        dbg!(&response);
-        // } else {
-        //     info!("No trigger");
-        // }
-        Timer::after(Duration::from_secs(1)).await;
+            let response: Response<'_, '_, HttpConnection<'_, TcpConnection<'_, 1, 1024, 1024>>> =
+                match request.send(&mut http_buffers.rx_buffer).await {
+                    Ok(resp) => resp,
+                    Err(_e) => {
+                        error!("Failed to send HTTP request");
+                        return; // handle the error;
+                    }
+                };
+            dbg!(&response);
+            trap_pin_1.wait_for_low().await;
+            info!("Resetting trap");
+        };
     }
 }

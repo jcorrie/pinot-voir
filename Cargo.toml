@@ -2,6 +2,10 @@
 name = "pinot_voir"
 version = "0.1.0"
 edition = "2021"
+# The [[bin]] entries below are the authoritative list. Without this, cargo also
+# auto-discovers any other src/bin/*.rs — which would pull in main's i2s_wifi.rs,
+# whose i2s/audio modules this branch's src/common/mod.rs does not declare.
+autobins = false
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [dependencies]

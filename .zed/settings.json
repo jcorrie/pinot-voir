@@ -1,21 +1,16 @@
 {
-  "enable_language_server": true,
-  "format_on_save": "on",
   "lsp": {
     "rust-analyzer": {
+      // Use the PATH-resolved rust-analyzer (the rustup shim), which dispatches
+      // to the version matching rust-toolchain.toml, rather than Zed's bundled
+      // build — that one requires rustc >= 1.94 and this project pins 1.90.0-nightly.
+      // Requires: rustup component add rust-analyzer --toolchain nightly-2025-06-29
+      "binary": {
+        "ignore_system_version": false,
+      },
       "initialization_options": {
-        "procMacro": {
-          "enable": true,
-        },
-        "check": {
-          "command": "clippy",
-          "allTargets": false,
-          "rust.target": "thumbv7em-none-eabihf",
-        },
-        "cargo": {
-          "buildScripts": {
-            "enable": true,
-          },
+        "diagnostics": {
+          "disabled": ["type-mismatch"],
         },
       },
     },

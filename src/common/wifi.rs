@@ -2,39 +2,27 @@ use crate::common::shared_functions::{blink_n_times, EnvironmentVariables};
 
 use cyw43::Control;
 use cyw43::JoinOptions;
+use cyw43::{aligned_bytes, Aligned, A4};
 use cyw43_pio::{PioSpi, DEFAULT_CLOCK_DIVIDER};
 use defmt::info;
 use embassy_executor::Spawner;
 use embassy_net::dns::DnsQueryType;
 use embassy_net::{Config, Stack, StackResources};
-use embassy_rp::bind_interrupts;
 use embassy_rp::clocks::RoscRng;
-use embassy_rp::dma;
 use embassy_rp::gpio::{Level, Output};
-use embassy_rp::peripherals::{PIN_23, PIN_24, PIN_25, PIN_29, PIO0};
-use embassy_rp::pio::{InterruptHandler, Pio};
+use embassy_rp::peripherals::{DMA_CH0, PIN_23, PIN_24, PIN_25, PIN_29, PIO0};
+use embassy_rp::pio::Pio;
 use embassy_rp::Peri;
-use embassy_sync::signal::Signal;
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, mutex::Mutex};
 use embassy_time::{Duration, Timer};
 use reqwless::client::TlsConfig;
 use static_cell::StaticCell;
 
-pub static WIFI_RECONNECTED: Signal<CriticalSectionRawMutex, ()> = Signal::new();
-
 pub const WEB_TASK_POOL_SIZE: usize = 12;
-
-bind_interrupts!(pub struct Irqs {
-    PIO0_IRQ_0 => InterruptHandler<PIO0>;
-});
 
 #[embassy_executor::task]
 async fn wifi_task(
-    runner: cyw43::Runner<
-        'static,
-        cyw43::SpiBus<Output<'static>, PioSpi<'static, PIO0, 0>>,
-        cyw43::Cyw43439,
-    >,
+    runner: cyw43::Runner<'static, cyw43::SpiBus<Output<'static>, PioSpi<'static, PIO0, 0>>>,
 ) -> ! {
     runner.run().await
 }
@@ -62,30 +50,40 @@ impl EmbassyPicoWifiCore {
         pin_25: Peri<'static, PIN_25>,
         pin_29: Peri<'static, PIN_29>,
         pio_0: Peri<'static, PIO0>,
-        dma_ch0: dma::Channel<'static>,
-        dma_ch2: dma::Channel<'static>,
+
+        dma_ch0: Peri<'static, DMA_CH0>,
         spawner: Spawner,
     ) -> Self {
-        // let fw = cyw43::aligned_bytes!("../../cyw43-firmware/43439A0.bin");
-        let nvram = cyw43::aligned_bytes!("../../cyw43-firmware/nvram_rp2040.bin");
-        // let clm = include_bytes!("../../cyw43-firmware/43439A0_clm.bin");
-        // To make flashing faster for development, you may want to flash the firmwares independently
-        // at hardcoded addresses, instead of baking them into the program with `include_bytes!`:
-        //      probe-rs download ../../cyw43-firmware/43439A0.bin --binary-format bin --chip RP2040 --base-address 0x10100000
-        //     probe-rs download ../../cyw43-firmware/43439A0_clm.bin --binary-format bin --chip RP2040 --base-address 0x10140000
-        // Firmware is pre-flashed at 0x10100000 (4-byte aligned). Cast the raw slice
-        // to &Aligned<A4, [u8]> as required by the updated cyw43::new() API.
-        // Safety: address is 4-byte aligned and contains valid firmware bytes.
-        let fw: &cyw43::Aligned<cyw43::A4, [u8]> = unsafe {
-            &*(core::slice::from_raw_parts(0x10100000 as *const u8, 230321) as *const [u8]
-                as *const cyw43::Aligned<cyw43::A4, [u8]>)
-        };
-        let clm = unsafe { core::slice::from_raw_parts(0x10140000 as *const u8, 4752) };
+        let fw: &Aligned<A4, [u8]>;
+        let clm: &[u8];
+        // cyw43 0.7 no longer bundles the RP2040 NVRAM blob; it has to be passed to `new`.
+        let nvram: &Aligned<A4, [u8]> = aligned_bytes!("../../cyw43-firmware/nvram_rp2040.bin");
+
+        pub const FLASH_NEW_FIRMWARE: bool = true;
+
+        match FLASH_NEW_FIRMWARE {
+            true => {
+                fw = aligned_bytes!("../../cyw43-firmware/43439A0.bin");
+                clm = include_bytes!("../../cyw43-firmware/43439A0_clm.bin");
+            }
+            false => {
+                // To make flashing faster for development, you may want to flash the firmwares independently
+                // at hardcoded addresses, instead of baking them into the program with `include_bytes!`:
+                //     probe-rs download 43439A0.bin --binary-format bin --chip RP2040 --base-address 0x10100000
+                //     probe-rs download 43439A0_clm.bin --binary-format bin --chip RP2040 --base-address 0x10140000
+                // SAFETY: 0x10100000 is 4-byte aligned, which is what `Aligned<A4, _>` requires.
+                fw = unsafe {
+                    &*(core::slice::from_raw_parts(0x10100000 as *const u8, 231077) as *const [u8]
+                        as *const Aligned<A4, [u8]>)
+                };
+                clm = unsafe { core::slice::from_raw_parts(0x10140000 as *const u8, 984) };
+            }
+        }
 
         let pwr = Output::new(pin_23, Level::Low);
         let cs = Output::new(pin_25, Level::High);
         let config = Config::dhcpv4(Default::default());
-        let mut pio = Pio::new(pio_0, Irqs);
+        let mut pio = Pio::new(pio_0, crate::common::irqs::Irqs);
         let spi = PioSpi::new(
             &mut pio.common,
             pio.sm0,
@@ -94,13 +92,12 @@ impl EmbassyPicoWifiCore {
             cs,
             pin_24,
             pin_29,
-            dma_ch0,
-            dma_ch2,
+            embassy_rp::dma::Channel::new(dma_ch0, crate::common::irqs::Irqs),
         );
         static STATE: StaticCell<cyw43::State> = StaticCell::new();
         let state = STATE.init(cyw43::State::new());
         let (net_device, mut control, runner) = cyw43::new(state, pwr, spi, fw, nvram).await;
-        spawner.spawn(wifi_task(runner).expect("Error running wifi task"));
+        spawner.spawn(defmt::unwrap!(wifi_task(runner)));
 
         control.init(clm).await;
         control
@@ -118,7 +115,7 @@ impl EmbassyPicoWifiCore {
             seed,
         );
 
-        spawner.spawn(net_task(runner).unwrap());
+        spawner.spawn(defmt::unwrap!(net_task(runner)));
 
         Self {
             control,
@@ -133,15 +130,12 @@ impl EmbassyPicoWifiCore {
         pin_25: Peri<'static, PIN_25>,
         pin_29: Peri<'static, PIN_29>,
         pio0: Peri<'static, PIO0>,
-        dma_ch0: dma::Channel<'static>,
-        dma_ch2: dma::Channel<'static>,
+        dma_ch0: Peri<'static, DMA_CH0>,
         spawner: Spawner,
         environment_variables: &EnvironmentVariables,
     ) -> Self {
-        let mut embassy_pico_wifi_core = EmbassyPicoWifiCore::new(
-            pin_23, pin_24, pin_25, pin_29, pio0, dma_ch0, dma_ch2, spawner,
-        )
-        .await;
+        let mut embassy_pico_wifi_core =
+            EmbassyPicoWifiCore::new(pin_23, pin_24, pin_25, pin_29, pio0, dma_ch0, spawner).await;
 
         let successful_join = embassy_pico_wifi_core
             .join_wpa2_network(
@@ -175,7 +169,7 @@ impl EmbassyPicoWifiCore {
             .join(wifi_ssid, JoinOptions::new(wifi_password.as_bytes()))
             .await
         {
-            info!("join failed with status={:?}", err);
+            info!("join failed: {}", err);
         }
         info!("waiting for link...");
         self.stack.wait_link_up().await;
@@ -230,32 +224,26 @@ pub async fn wifi_autoheal_task(
     const RECONNECT_DELAY: Duration = Duration::from_secs(30);
 
     loop {
-        {
-            info!("Checking WiFi connection status...");
-            let mut wifi_core = shared_wifi_core.0.lock().await;
+        info!("Checking WiFi connection status...");
+        let mut wifi_core = shared_wifi_core.0.lock().await;
 
-            // The most reliable way to test active connection is to poll google
-            let ping_google_result = wifi_core
-                .stack
-                .dns_query("google.com", DnsQueryType::A)
-                .await;
+        // The most reliable way to test active connection is to poll google
+        let ping_google_result = wifi_core
+            .stack
+            .dns_query("google.com", DnsQueryType::A)
+            .await;
 
-            if ping_google_result.is_err() {
-                info!("WiFi link down, attempting reconnection...");
-                match wifi_core
-                    .join_wpa2_network(env.wifi_ssid, env.wifi_password)
-                    .await
-                {
-                    Ok(_) => {
-                        info!("Rejoined WiFi.");
-                        // in wifi_autoheal_task, after successfully rejoining:
-                        WIFI_RECONNECTED.signal(());
-                    }
-                    Err(e) => info!("WiFi rejoin failed: {:?}", e),
-                }
-            } else {
-                info!("WiFi is connected");
+        if ping_google_result.is_err() {
+            info!("WiFi link down, attempting reconnection...");
+            match wifi_core
+                .join_wpa2_network(env.wifi_ssid, env.wifi_password)
+                .await
+            {
+                Ok(_) => info!("Rejoined WiFi."),
+                Err(e) => info!("WiFi rejoin failed: {}", e),
             }
+        } else {
+            info!("WiFi is connected");
         }
         Timer::after(RECONNECT_DELAY).await;
     }

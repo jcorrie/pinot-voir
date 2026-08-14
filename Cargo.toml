@@ -2,6 +2,9 @@
 name = "pinot_voir"
 version = "0.1.0"
 edition = "2021"
+# The [[bin]] entries below are the authoritative list. Without this, cargo also
+# auto-discovers any other src/bin/*.rs — which would pull in main's i2s_wifi.rs,
+# whose i2s/audio modules this branch's src/common/mod.rs does not declare.
 autobins = false
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -14,7 +17,7 @@ embassy-executor = { version = "0.10.0", features = [
     "executor-interrupt",
     "defmt",
 ] }
-embassy-time = { version = "0.5.0", features = [
+embassy-time = { version = "0.5.1", features = [
     "defmt",
     "defmt-timestamp-uptime",
 ] }
@@ -23,7 +26,7 @@ embassy-rp = { version = "0.10.0", features = [
     "unstable-pac",
     "time-driver",
     "critical-section-impl",
-    "rp2040",
+    "rp235xa",
 ] }
 embassy-net = { version = "0.9.1", features = [
     "defmt",
@@ -35,6 +38,7 @@ embassy-net = { version = "0.9.1", features = [
 ] }
 cyw43 = { version = "0.7.0", features = [
     "defmt",
+    "firmware-logs",
     "bluetooth",
 ] }
 cyw43-pio = { version = "0.10.0", features = ["defmt"] }
@@ -45,6 +49,11 @@ defmt-rtt = "1.0.0"
 
 # for web request example
 reqwless = { version = "0.14.0", features = ["defmt"] }
+# Not used directly. embedded-tls 0.18 (pinned by reqwless 0.14) uses der's
+# SequenceOf/SetOf without enabling der's `heapless` feature, so it fails to build.
+# Fixed in embedded-tls 0.19, which reqwless 0.14 can't take. Turn the feature on
+# here and let feature unification apply it. Drop this once reqwless moves to 0.19.
+der = { version = "0.8", default-features = false, features = ["heapless"] }
 
 
 cortex-m = { version = "0.7.6", features = ["inline-asm"] }
@@ -52,50 +61,32 @@ cortex-m-rt = "0.7.0"
 panic-probe = { version = "1.0.0", features = ["print-defmt"] }
 embedded-graphics = "0.8.1"
 st7789 = "0.6.1"
-heapless = "0.8"
+heapless = "0.9"
 
 
 embedded-hal-1 = { package = "embedded-hal", version = "1.0" }
-static_cell = { version = "2.1", features = ["nightly"] }
+static_cell = { version = "2.1" }
 portable-atomic = { version = "1.5", features = ["critical-section"] }
 rand = { version = "0.8.5", default-features = false }
 
-picoserve = { version = "0.18.0", features = ["embassy", "defmt", "json"] }
+picoserve = { version = "0.19.0", features = ["embassy", "defmt", "json"] }
 embassy-dht = { version = "0.1.9", default-features = false, features = [
     "dht22",
     "dht11",
     "dht20",
-    "rp2040",
+    "rp2350",
 ] }
 serde-json-core = "0.6.0"
 serde = { version = "1.0.219", default-features = false, features = ["derive"] }
-embedded-io-async = "0.6.1"
-der = { version = "0.8", features = ["heapless"] }
+embedded-io-async = "0.7.0"
 bytemuck = "1.23.2"
 embassy-usb-logger = "0.6.0"
 embassy-usb = { version = "0.6.0", features = ["defmt"] }
 log = "0.4.27"
-embassy-usb-driver = "0.2.1"
-embassy-futures = "0.1.2"
+embassy-usb-driver = "0.2.2"
 
 [patch.crates-io]
 embassy-dht = { git = "https://github.com/jcorrie/embassy-dht", branch = "dhtsensor-trait" }
-cyw43 = { git = "https://github.com/embassy-rs/embassy", rev = "9577afe" }
-cyw43-pio = { git = "https://github.com/embassy-rs/embassy", rev = "9577afe" }
-embassy-executor = { git = "https://github.com/embassy-rs/embassy", rev = "9577afe" }
-embassy-time = { git = "https://github.com/embassy-rs/embassy", rev = "9577afe" }
-embassy-time-driver = { git = "https://github.com/embassy-rs/embassy", rev = "9577afe" }
-embassy-sync = { git = "https://github.com/embassy-rs/embassy", rev = "9577afe" }
-embassy-net = { git = "https://github.com/embassy-rs/embassy", rev = "9577afe" }
-embassy-net-driver = { git = "https://github.com/embassy-rs/embassy", rev = "9577afe" }
-embassy-net-driver-channel = { git = "https://github.com/embassy-rs/embassy", rev = "9577afe" }
-embassy-rp = { git = "https://github.com/embassy-rs/embassy", rev = "9577afe" }
-embassy-hal-internal = { git = "https://github.com/embassy-rs/embassy", rev = "9577afe" }
-embassy-embedded-hal = { git = "https://github.com/embassy-rs/embassy", rev = "9577afe" }
-embassy-usb = { git = "https://github.com/embassy-rs/embassy", rev = "9577afe" }
-embassy-usb-driver = { git = "https://github.com/embassy-rs/embassy", rev = "9577afe" }
-embassy-usb-logger = { git = "https://github.com/embassy-rs/embassy", rev = "9577afe" }
-embassy-futures = { git = "https://github.com/embassy-rs/embassy", rev = "9577afe" }
 
 
 [profile.release]
@@ -105,7 +96,6 @@ opt-level = 'z'
 
 [profile.dev]
 debug = 2
-lto = true
 opt-level = "z"
 
 
@@ -118,8 +108,8 @@ bench = false
 
 
 [[bin]]
-name = "pio_blink"
-path = "src/bin/pio_blink.rs"
+name = "blink"
+path = "src/bin/blink.rs"
 test = false
 doctest = false
 bench = false
@@ -164,18 +154,17 @@ doctest = false
 bench = false
 
 
-
 [[bin]]
-name = "audio_udp"
-path = "src/bin/audio_udp.rs"
+name = "wifi_trap"
+path = "src/bin/wifi_trap.rs"
 test = false
 doctest = false
 bench = false
 
 
 [[bin]]
-name = "i2s_wifi"
-path = "src/bin/i2s_wifi.rs"
+name = "audio_udp"
+path = "src/bin/audio_udp.rs"
 test = false
 doctest = false
 bench = false

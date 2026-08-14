@@ -24,6 +24,7 @@ pub struct EnvironmentVariables {
     pub wifi_password: &'static str,
     pub supabase_url: &'static str,
     pub supabase_key: &'static str,
+    pub server_url: &'static str,
 }
 
 impl Default for EnvironmentVariables {
@@ -39,6 +40,7 @@ impl EnvironmentVariables {
         let mut password: Option<&str> = None;
         let mut supabase_url: Option<&str> = None;
         let mut supabase_key: Option<&str> = None;
+        let mut server_url: Option<&str> = None;
 
         for line in env_file.lines() {
             if let Some((key, value)) = line.split_once('=') {
@@ -47,6 +49,7 @@ impl EnvironmentVariables {
                     "PASSWORD" => password = Some(value),
                     "SUPABASE_URL" => supabase_url = Some(value),
                     "SUPABASE_KEY" => supabase_key = Some(value),
+                    "SERVER_URL" => server_url = Some(value),
                     _ => {}
                 }
             }
@@ -56,12 +59,14 @@ impl EnvironmentVariables {
         let wifi_password = password.expect("Password not found in .env file");
         let supabase_url = supabase_url.expect("Supabase URL not found in .env file");
         let supabase_key = supabase_key.expect("Supabase key not found in .env file");
+        let server_url = server_url.expect("Server url not found in .env file");
 
         EnvironmentVariables {
             wifi_ssid,
             wifi_password,
             supabase_url,
             supabase_key,
+            server_url,
         }
     }
 }

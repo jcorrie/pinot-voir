@@ -2,13 +2,22 @@
 #![no_std]
 #![no_main]
 
+use cyw43_pio::PioSpi;
 use defmt::*;
 use embassy_executor::Spawner;
 use embassy_rp::gpio::{Level, Output};
+use embassy_rp::peripherals::PIO0;
 use embassy_sync::blocking_mutex::raw::ThreadModeRawMutex;
 use embassy_sync::channel::{Channel, Sender};
 use embassy_time::{Duration, Ticker};
 use {defmt_rtt as _, panic_probe as _};
+
+#[embassy_executor::task]
+async fn cyw43_task(
+    runner: cyw43::Runner<'static, cyw43::SpiBus<Output<'static>, PioSpi<'static, PIO0, 0>>>,
+) -> ! {
+    runner.run().await
+}
 
 enum LedState {
     Toggle,
@@ -24,11 +33,11 @@ async fn main(spawner: Spawner) {
     let dt = 100 * 1_000_000;
     let k = 1.003;
 
-    spawner.spawn(toggle_led(CHANNEL.sender(), Duration::from_nanos(dt)).unwrap());
-    spawner.spawn(toggle_led(
+    spawner.spawn(defmt::unwrap!(toggle_led(CHANNEL.sender(), Duration::from_nanos(dt))));
+    spawner.spawn(defmt::unwrap!(toggle_led(
         CHANNEL.sender(),
-        Duration::from_nanos((dt as f64 * k) as u64),
-    ).unwrap());
+        Duration::from_nanos((dt as f64 * k) as u64)
+    )));
 
     loop {
         match CHANNEL.receive().await {

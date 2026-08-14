@@ -1,29 +1,17 @@
 #![no_std]
 #![no_main]
-#![feature(type_alias_impl_trait)]
-#![feature(impl_trait_in_assoc_type)]
 
 use defmt::info;
 use embassy_executor::Spawner;
-use embassy_rp::adc::{Adc, Channel, Config, InterruptHandler as ADCInterruptHandler};
-use embassy_rp::bind_interrupts;
-use embassy_rp::dma;
+use embassy_rp::adc::{Adc, Channel, Config};
 use embassy_rp::gpio::Pull;
-use embassy_rp::peripherals::{DMA_CH0, USB};
-use embassy_rp::usb::{Driver, InterruptHandler as USBInterruptHandler};
-use embassy_usb::class::cdc_acm::{CdcAcmClass, State};
-use embassy_usb::driver::EndpointError;
+use embassy_rp::peripherals::USB;
+use embassy_rp::usb::Driver;
 use embassy_usb::UsbDevice;
+use embassy_usb::class::cdc_acm::{CdcAcmClass, State};
+use embassy_usb_driver::EndpointError;
 use static_cell::StaticCell;
 use {defmt_rtt as _, panic_probe as _};
-
-bind_interrupts!(struct Irqs {
-    USBCTRL_IRQ => USBInterruptHandler<USB>;
-    DMA_IRQ_0 => dma::InterruptHandler<DMA_CH0>;
-});
-bind_interrupts!(struct IrqsADC {
-    ADC_IRQ_FIFO => ADCInterruptHandler;
-});
 
 async fn write_cdc_chunked<'a>(
     cdc: &mut CdcAcmClass<'static, Driver<'static, USB>>,
@@ -34,10 +22,16 @@ async fn write_cdc_chunked<'a>(
     while offset < data.len() {
         let end = (offset + max_packet_size).min(data.len());
         let chunk = &data[offset..end];
+        // Wait for connection just in case
         cdc.wait_connection().await;
+        // Try writing
         match cdc.write_packet(chunk).await {
             Ok(_) => offset = end,
-            Err(e) => return Err(e),
+            Err(e) => {
+                // Handle or retry error (e.g., BufferOverflow)
+                // Could add delay before retry, or return error to caller
+                return Err(e);
+            }
         }
     }
     Ok(())
@@ -53,7 +47,7 @@ async fn main(spawner: Spawner) {
     static BOS_DESCRIPTOR: StaticCell<[u8; 256]> = StaticCell::new();
     static CONTROL_BUF: StaticCell<[u8; 64]> = StaticCell::new();
 
-    let driver = Driver::new(p.USB, Irqs);
+    let driver = Driver::new(p.USB, pinot_voir::common::irqs::Irqs);
 
     let mut usb_builder = embassy_usb::Builder::new(
         driver,
@@ -75,11 +69,11 @@ async fn main(spawner: Spawner) {
     let mut cdc = CdcAcmClass::new(&mut usb_builder, STATE.init(State::new()), 64);
     let usb = usb_builder.build();
 
-    spawner.spawn(usb_task(usb).unwrap());
+    spawner.spawn(defmt::unwrap!(usb_task(usb)));
 
     // ADC setup
-    let mut adc = Adc::new(p.ADC, IrqsADC, Config::default());
-    let mut dma = dma::Channel::new(p.DMA_CH0, Irqs);
+    let mut adc = Adc::new(p.ADC, pinot_voir::common::irqs::Irqs, Config::default());
+    let mut dma = embassy_rp::dma::Channel::new(p.DMA_CH0, pinot_voir::common::irqs::Irqs);
     let mut p26 = Channel::new_pin(p.PIN_26, Pull::None);
 
     const BUFFER_SIZE: usize = 1024;
@@ -96,16 +90,17 @@ async fn main(spawner: Spawner) {
             {
                 let audio_bytes: &[u8] = bytemuck::cast_slice(&audio_buffer);
                 info!("{}", &audio_bytes);
+                // Write audio bytes to USB CDC ACM
                 let result = write_cdc_chunked(&mut cdc, audio_bytes).await;
                 match result {
                     Ok(_) => {}
                     Err(e) => {
                         info!("USB write error: {:?}", e);
-                        break;
+                        break; // If USB write fails, break and wait for next connection
                     }
                 }
             } else {
-                break;
+                break; // If ADC fails, break and wait for next connection
             }
         }
     }

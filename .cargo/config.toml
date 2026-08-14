@@ -7,7 +7,8 @@ runner = "probe-rs run --chip RP2040"
 # runner = "picotool load --update --verify --execute -t elf"
 
 [build]
-target = "thumbv6m-none-eabi" # Cortex-M0 and Cortex-M0+
+target = "thumbv8m.main-none-eabihf" # RP2350 / Pico 2 (Cortex-M33)
+# target = "thumbv6m-none-eabi"        # RP2040 / Pico W (Cortex-M0+)
 
 [env]
 DEFMT_LOG = "info,cyw43=warn,smoltcp=warn"

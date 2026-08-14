@@ -1,29 +1,24 @@
-use crate::common::audio::AudioBlock;
+use crate::common::adc_microphone::AudioBlock;
 use defmt::*;
-use embassy_rp::bind_interrupts;
-use embassy_rp::peripherals::USB;
-use embassy_rp::usb::{Driver, InterruptHandler as USBInterruptHandler};
 use embassy_rp::Peri;
+use embassy_rp::peripherals::USB;
+use embassy_rp::usb::Driver;
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::channel::Channel as SyncChannel;
 use embassy_time::Instant;
-use embassy_usb::class::cdc_acm::CdcAcmClass;
 use embassy_usb::UsbDevice;
+use embassy_usb::class::cdc_acm::CdcAcmClass;
 use static_cell::StaticCell;
 static CONFIG_DESCRIPTOR: StaticCell<[u8; 256]> = StaticCell::new();
 static BOS_DESCRIPTOR: StaticCell<[u8; 256]> = StaticCell::new();
 static CONTROL_BUF: StaticCell<[u8; MAX_USB_BUF]> = StaticCell::new();
 const MAX_USB_BUF: usize = 64;
 
-bind_interrupts!(struct Irqs {
-    USBCTRL_IRQ => USBInterruptHandler<USB>;
-});
-
 // ---------- Helpers ----------
 pub async fn write_cdc_chunked(
     cdc: &mut CdcAcmClass<'static, Driver<'static, USB>>,
     data: &[u8],
-) -> Result<(), embassy_usb::driver::EndpointError> {
+) -> Result<(), embassy_usb_driver::EndpointError> {
     // CDC full-speed EPs are typically 64 bytes
     let max_packet = 64usize;
     let mut offset = 0usize;
@@ -43,7 +38,7 @@ pub async fn write_cdc_chunked(
 }
 
 pub fn init_usb(usb: Peri<'static, USB>) -> embassy_usb::Builder<'static, Driver<'static, USB>> {
-    let driver = Driver::new(usb, Irqs);
+    let driver = Driver::new(usb, crate::common::irqs::Irqs);
 
     let usb_builder = embassy_usb::Builder::new(
         driver,
@@ -90,9 +85,9 @@ pub async fn cdc_tx_task(
 
         // Drain audio blocks while connected
         loop {
-            let mut block: AudioBlock = audio_channel.receive().await;
-            block.centre_samples();
-            let bytes: &[u8] = bytemuck::cast_slice(&block.samples);
+            let block: AudioBlock = audio_channel.receive().await;
+            let centred_samples = block.centre_samples();
+            let bytes: &[u8] = bytemuck::cast_slice(&centred_samples);
 
             if let Err(e) = write_cdc_chunked(cdc, bytes).await {
                 warn!("CDC write error: {:?}", e);

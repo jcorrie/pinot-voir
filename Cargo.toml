@@ -26,7 +26,6 @@ embassy-rp = { version = "0.10.0", features = [
     "unstable-pac",
     "time-driver",
     "critical-section-impl",
-    "rp235xa",
 ] }
 embassy-net = { version = "0.9.1", features = [
     "defmt",
@@ -74,7 +73,6 @@ embassy-dht = { version = "0.1.9", default-features = false, features = [
     "dht22",
     "dht11",
     "dht20",
-    "rp2350",
 ] }
 serde-json-core = "0.6.0"
 serde = { version = "1.0.219", default-features = false, features = ["derive"] }
@@ -84,6 +82,24 @@ embassy-usb-logger = "0.6.0"
 embassy-usb = { version = "0.6.0", features = ["defmt"] }
 log = "0.4.27"
 embassy-usb-driver = "0.2.2"
+
+# The chip-select features have to match the `[build] target` in
+# .cargo/config.toml — enabling `rp235xa` while compiling for thumbv6m gets you
+# Cortex-M33 code (msplim, NVIC::request, 32-bit atomics) on a Cortex-M0+ and a
+# wall of errors from inside embassy-rp. Keying them off the target here means
+# switching boards is just the one line in .cargo/config.toml. build.rs already
+# picks memory.x and the link args off TARGET the same way.
+[target.thumbv6m-none-eabi.dependencies] # RP2040 / Pico W
+embassy-rp = { version = "0.10.0", features = ["rp2040"] }
+embassy-dht = { version = "0.1.9", default-features = false, features = [
+    "rp2040",
+] }
+
+[target."thumbv8m.main-none-eabihf".dependencies] # RP2350 / Pico 2
+embassy-rp = { version = "0.10.0", features = ["rp235xa"] }
+embassy-dht = { version = "0.1.9", default-features = false, features = [
+    "rp2350",
+] }
 
 [patch.crates-io]
 embassy-dht = { git = "https://github.com/jcorrie/embassy-dht", branch = "dhtsensor-trait" }

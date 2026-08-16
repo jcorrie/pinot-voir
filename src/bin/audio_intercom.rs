@@ -191,6 +191,7 @@ async fn mic_task(mut i2s: Sph0645I2sIn<'static, PIO1, 0>) -> ! {
     let mut wide = [0i16; I2S_FRAME_SAMPLES];
     let mut frame: Frame = [0; FRAME_SAMPLES];
     let mut dropped: u32 = 0;
+    let mut blocks: u32 = 0;
 
     i2s.start();
     info!("intercom: microphone running at {} Hz", I2S_SAMPLE_RATE);
@@ -199,11 +200,31 @@ async fn mic_task(mut i2s: Sph0645I2sIn<'static, PIO1, 0>) -> ! {
         // Queue the next transfer first, then process the block that just
         // landed while the DMA is busy.
         let transfer = i2s.read(front);
+        blocks = blocks.wrapping_add(1);
 
         for (sample, frame) in wide.iter_mut().zip(back.chunks_exact(WORDS_PER_FRAME)) {
             *sample = sample_from_frame(frame);
         }
         decimator.process(&wide, &mut frame);
+
+        // Wiring diagnostic every 2 s, carried over from the duplex-audio
+        // branch, where the microphone was never confirmed working:
+        //   maxL=0 maxR=0            data line dead — check 3V3, GND, DOUT→GPIO20
+        //   maxL=0 maxR!=0           mic is on the right channel; tie SELECT to GND
+        //   maxL=8000xxxx, unmoving  stuck MSB — BCLK out of the mic's range
+        //   maxL varies with sound   healthy
+        if blocks.is_multiple_of(100) {
+            let mut max_left = 0u32;
+            let mut max_right = 0u32;
+            for pair in back.chunks_exact(WORDS_PER_FRAME) {
+                max_left = max_left.max(pair[0]);
+                max_right = max_right.max(pair[1]);
+            }
+            info!(
+                "intercom: i2s raw L[0]={:08x} R[0]={:08x} maxL={:08x} maxR={:08x}",
+                back[0], back[1], max_left, max_right
+            );
+        }
 
         if intercom::ptt_held() && MIC.try_send(frame).is_err() {
             dropped = dropped.wrapping_add(1);

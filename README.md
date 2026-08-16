@@ -54,6 +54,10 @@ socket serves both directions.
 Set `AUDIO_SERVER_IP` in `.env` to the LAN address of the server, then
 `cargo run --bin audio_intercom --release`.
 
+To bring the hardware up without running SPQR, point `AUDIO_SERVER_IP` at your
+desktop and run [`py-client/audio_room.py`](py-client/README.md), which stands in
+for the room over the same protocol.
+
 **Half duplex.** Hold the button to talk, release to listen. The two are never
 live at once: while the button is down, incoming room audio is discarded rather
 than played. There is no acoustic echo canceller — an M0+ is not going to run one —
@@ -89,6 +93,10 @@ Notes:
   needs 2.048–4.096 MHz and returns a stuck MSB below that; embassy's stock
   16-bit input program gives 1.536 MHz and does not work. `common/i2s_microphone.rs`
   carries the fix, from the duplex-audio branch where it was diagnosed.
+* The microphone has never been confirmed working on this hardware — the earlier
+  duplex-audio branch got as far as a dead data line. `mic_task` logs the raw
+  per-channel I2S maxima every 2 s; `py-client/README.md` has the table for
+  reading that line and the client's stats together.
 * Compute is not the constraint here. Sustained load is roughly 512 kbit/s of UDP
   and a few percent of one core; the build uses ~86 KB of the RP2040's 264 KB of
   RAM. What does matter is that the capture clock, the playback clock and the

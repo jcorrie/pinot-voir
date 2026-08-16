@@ -1852,6 +1852,7 @@ dependencies = [
  "embassy-dht",
  "embassy-embedded-hal",
  "embassy-executor",
+ "embassy-futures",
  "embassy-net",
  "embassy-rp",
  "embassy-sync",

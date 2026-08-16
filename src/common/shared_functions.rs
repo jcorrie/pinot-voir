@@ -25,6 +25,10 @@ pub struct EnvironmentVariables {
     pub supabase_url: &'static str,
     pub supabase_key: &'static str,
     pub server_url: &'static str,
+    /// LAN address of the SPQR audio room, dotted quad. Optional so that the
+    /// binaries that have nothing to do with audio still build from a `.env`
+    /// that predates it; `audio_intercom` is the one that requires it.
+    pub audio_server_ip: Option<&'static str>,
 }
 
 impl Default for EnvironmentVariables {
@@ -41,6 +45,7 @@ impl EnvironmentVariables {
         let mut supabase_url: Option<&str> = None;
         let mut supabase_key: Option<&str> = None;
         let mut server_url: Option<&str> = None;
+        let mut audio_server_ip: Option<&str> = None;
 
         for line in env_file.lines() {
             if let Some((key, value)) = line.split_once('=') {
@@ -50,6 +55,7 @@ impl EnvironmentVariables {
                     "SUPABASE_URL" => supabase_url = Some(value),
                     "SUPABASE_KEY" => supabase_key = Some(value),
                     "SERVER_URL" => server_url = Some(value),
+                    "AUDIO_SERVER_IP" => audio_server_ip = Some(value),
                     _ => {}
                 }
             }
@@ -67,6 +73,7 @@ impl EnvironmentVariables {
             supabase_url,
             supabase_key,
             server_url,
+            audio_server_ip,
         }
     }
 }

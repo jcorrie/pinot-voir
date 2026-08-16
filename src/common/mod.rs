@@ -13,3 +13,7 @@ pub mod adc_microphone;
 pub mod usb;
 
 pub mod irqs;
+
+pub mod intercom;
+
+pub mod resample;

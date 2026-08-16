@@ -10,6 +10,7 @@ autobins = false
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [dependencies]
 embassy-embedded-hal = { version = "0.6.0", features = ["defmt"] }
+embassy-futures = "0.1.2"
 embassy-sync = { version = "0.8.0", features = ["defmt"] }
 embassy-executor = { version = "0.10.0", features = [
     "platform-cortex-m",
@@ -181,6 +182,14 @@ bench = false
 [[bin]]
 name = "audio_udp"
 path = "src/bin/audio_udp.rs"
+test = false
+doctest = false
+bench = false
+
+
+[[bin]]
+name = "audio_intercom"
+path = "src/bin/audio_intercom.rs"
 test = false
 doctest = false
 bench = false

@@ -14,6 +14,8 @@ pub mod usb;
 
 pub mod irqs;
 
+pub mod i2s_microphone;
+
 pub mod intercom;
 
 pub mod resample;

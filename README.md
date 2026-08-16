@@ -68,15 +68,16 @@ Wiring:
 | Mic BCLK | 18 | 24 |
 | Mic LRCLK | 19 | 25 |
 | Mic DOUT | 20 | 26 |
-| DAC DIN | 9 | 12 |
-| DAC BCLK | 10 | 14 |
-| DAC LRCLK | 11 | 15 |
-| PTT button | 15 | 20 |
+| DAC DIN | 13 | 17 |
+| DAC BCLK | 14 | 19 |
+| DAC LRCLK | 15 | 20 |
+| PTT button | 22 | 29 |
 
-The button just shorts GPIO 15 to ground — the internal pull-up does the rest, so
-no external parts. Each pair of clocks has to be consecutive GPIOs in that order,
-because PIO drives them as one contiguous side-set range. Tie the microphone's
-channel select high (right channel).
+Microphone SELECT to ground. The DAC pins match `audio_duplex` on the
+duplex-audio branch, so one breadboard serves both. The button just shorts
+GPIO 22 to ground — the internal pull-up does the rest, so no external parts.
+Each pair of clocks has to be consecutive GPIOs in that order, because PIO
+drives them as one contiguous side-set range.
 
 Notes:
 
@@ -84,10 +85,12 @@ Notes:
   microphones (SPH0645LM4H, INMP441) are only specified down to 32 kHz. A 27-tap
   Q15 FIR in `common/resample.rs` handles both directions; it costs about 6% of a
   core and has 0.5 ms of group delay.
-* `I2S_BIT_DEPTH` puts BCLK at 1.536 MHz. Some class-D amps want a faster bit
-  clock than that — see the comment on the constant if yours will not lock.
+* Both directions run 32-bit I2S half-frames, so BCLK is 3.072 MHz. The SPH0645
+  needs 2.048–4.096 MHz and returns a stuck MSB below that; embassy's stock
+  16-bit input program gives 1.536 MHz and does not work. `common/i2s_microphone.rs`
+  carries the fix, from the duplex-audio branch where it was diagnosed.
 * Compute is not the constraint here. Sustained load is roughly 512 kbit/s of UDP
-  and a few percent of one core; the build uses ~70 KB of the RP2040's 264 KB of
+  and a few percent of one core; the build uses ~86 KB of the RP2040's 264 KB of
   RAM. What does matter is that the capture clock, the playback clock and the
   server's 50 Hz are three free-running oscillators, which is what the jitter
   buffer in `common/intercom.rs` absorbs.

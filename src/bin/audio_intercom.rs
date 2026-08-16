@@ -27,19 +27,18 @@
 //! | Mic BCLK | 18 | 24 |
 //! | Mic LRCLK | 19 | 25 |
 //! | Mic DOUT | 20 | 26 |
-//! | DAC DIN | 9 | 12 |
-//! | DAC BCLK | 10 | 14 |
-//! | DAC LRCLK | 11 | 15 |
-//! | PTT button | 15 | 20 |
+//! | DAC DIN | 13 | 17 |
+//! | DAC BCLK | 14 | 19 |
+//! | DAC LRCLK | 15 | 20 |
+//! | PTT button | 22 | 29 |
 //!
-//! The button shorts GPIO 15 to ground; the internal pull-up does the rest, so
+//! Microphone SELECT to ground. The DAC pins match `audio_duplex` on the
+//! duplex-audio branch so the same breadboard serves both.
+//!
+//! The button shorts GPIO 22 to ground; the internal pull-up does the rest, so
 //! it is two wires and no external parts. Bit and word clocks have to be
 //! consecutive GPIOs in that order — PIO side-set drives them as one contiguous
 //! range.
-//!
-//! Tie the microphone's channel select high (right channel): the PIO input
-//! program lands the right slot in the top half of each word, which is what
-//! [`sample_from_i2s`] reads.
 
 #![no_std]
 #![no_main]
@@ -54,10 +53,13 @@ use embassy_net::{IpAddress, IpEndpoint, Stack};
 use embassy_rp::gpio::{Input, Pull};
 use embassy_rp::peripherals::PIO1;
 use embassy_rp::pio::Pio;
-use embassy_rp::pio_programs::i2s::{PioI2sIn, PioI2sInProgram, PioI2sOut, PioI2sOutProgram};
+use embassy_rp::pio_programs::i2s::{PioI2sOut, PioI2sOutProgram};
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::channel::Channel;
 use embassy_time::{Duration, Instant, Ticker, Timer};
+use pinot_voir::common::i2s_microphone::{
+    sample_from_frame, Sph0645I2sIn, Sph0645InProgram, USE_ONBOARD_PULLDOWN, WORDS_PER_FRAME,
+};
 use pinot_voir::common::intercom::{
     self, Frame, FRAME_SAMPLES, KEEPALIVE_INTERVAL, PLAYBACK, UDP_PORT,
 };
@@ -71,16 +73,11 @@ use {defmt_rtt as _, panic_probe as _};
 /// I2S bus rate. Three times the 16 kHz wire rate, and inside the range every
 /// common I2S MEMS microphone is specified for.
 const I2S_SAMPLE_RATE: u32 = 48_000;
-/// Bits per channel slot. With two channels this puts BCLK at 1.536 MHz. Some
-/// class-D amplifiers (the MAX98357A among them) want a faster bit clock than
-/// that; if yours will not lock, 32-bit slots give 3.072 MHz, at the cost of
-/// packing one word per channel in [`pack_stereo`] instead of one per pair.
-const I2S_BIT_DEPTH: u32 = 16;
-const I2S_CHANNELS: u32 = 2;
-/// The RP2040's internal pull-downs are adequate; the Pico 2 is the board with
-/// the known problem here. Set true only if your microphone needs it and you
-/// have no external resistor.
-const MIC_INTERNAL_PULLDOWN: bool = false;
+/// Bits per channel slot, output side. 32 rather than 16 puts BCLK at
+/// 3.072 MHz, matching what the microphone needs on the input side and clearing
+/// the 2.2 MHz minimum the MAX98357A asks for. One 32-bit word per channel, so
+/// a stereo frame is two words — see [`fill_stereo`].
+const I2S_BIT_DEPTH: u32 = 32;
 
 /// Long enough for a tactile switch to settle, short enough not to clip the
 /// start of a word.
@@ -115,19 +112,17 @@ async fn main(spawner: Spawner) {
         ..
     } = Pio::new(p.PIO1, Irqs);
 
-    let in_program = PioI2sInProgram::new(&mut common);
-    let i2s_in = PioI2sIn::new(
+    let in_program = Sph0645InProgram::new(&mut common);
+    let i2s_in = Sph0645I2sIn::new(
         &mut common,
         sm0,
         p.DMA_CH1,
         Irqs,
-        MIC_INTERNAL_PULLDOWN,
+        USE_ONBOARD_PULLDOWN,
         p.PIN_20, // DOUT
         p.PIN_18, // BCLK
         p.PIN_19, // LRCLK
         I2S_SAMPLE_RATE,
-        I2S_BIT_DEPTH,
-        I2S_CHANNELS,
         &in_program,
     );
 
@@ -137,9 +132,9 @@ async fn main(spawner: Spawner) {
         sm1,
         p.DMA_CH2,
         Irqs,
-        p.PIN_9,  // DIN
-        p.PIN_10, // BCLK
-        p.PIN_11, // LRCLK
+        p.PIN_13, // DIN
+        p.PIN_14, // BCLK
+        p.PIN_15, // LRCLK
         I2S_SAMPLE_RATE,
         I2S_BIT_DEPTH,
         &out_program,
@@ -147,7 +142,7 @@ async fn main(spawner: Spawner) {
 
     // Sample the button before anything can transmit, so a device that powers up
     // with PTT held does not start out in the wrong state.
-    let ptt = Input::new(p.PIN_15, Pull::Up);
+    let ptt = Input::new(p.PIN_22, Pull::Up);
     intercom::set_ptt(ptt.is_low());
     spawner.spawn(unwrap!(ptt_task(ptt)));
 
@@ -166,19 +161,14 @@ async fn main(spawner: Spawner) {
     spawner.spawn(unwrap!(net_task(stack, server)));
 }
 
-/// One I2S word carries both channels when the slot width is 16 bits. The PIO
-/// input program shifts left, so the slot that arrives first ends up in the top
-/// half — that is the right channel, hence tying the mic's select pin high.
-fn sample_from_i2s(word: u32) -> i16 {
-    ((word as i32) >> 16) as i16
-}
-
-/// The mirror of [`sample_from_i2s`]: the same mono sample in both slots, high
-/// half first. Feeding both channels suits a mono amplifier however its channel
+/// Write one mono sample into a stereo frame's pair of 32-bit slots. The PIO
+/// output program shifts MSB-first, so a 16-bit sample sits at the top of each
+/// word. Driving both channels suits a mono amplifier however its channel
 /// select is strapped.
-fn pack_stereo(sample: i16) -> u32 {
-    let half = sample as u16 as u32;
-    (half << 16) | half
+fn fill_stereo(frame: &mut [u32], sample: i16) {
+    let word = (sample as u16 as u32) << 16;
+    frame[0] = word;
+    frame[1] = word;
 }
 
 /// Capture, decimate, and queue for transmission while PTT is held.
@@ -188,12 +178,14 @@ fn pack_stereo(sample: i16) -> u32 {
 /// against. The decimator runs even when muted, which costs a few percent of a
 /// core and means its filter history is warm the instant the button goes down.
 #[embassy_executor::task]
-async fn mic_task(mut i2s: PioI2sIn<'static, PIO1, 0>) -> ! {
-    static DMA: StaticCell<[u32; I2S_FRAME_SAMPLES * 2]> = StaticCell::new();
+async fn mic_task(mut i2s: Sph0645I2sIn<'static, PIO1, 0>) -> ! {
+    const WORDS: usize = I2S_FRAME_SAMPLES * WORDS_PER_FRAME;
+
+    static DMA: StaticCell<[u32; WORDS * 2]> = StaticCell::new();
     static DECIMATOR: StaticCell<Decimator> = StaticCell::new();
 
-    let dma = DMA.init([0; I2S_FRAME_SAMPLES * 2]);
-    let (mut back, mut front) = dma.split_at_mut(I2S_FRAME_SAMPLES);
+    let dma = DMA.init([0; WORDS * 2]);
+    let (mut back, mut front) = dma.split_at_mut(WORDS);
     let decimator = DECIMATOR.init(Decimator::new());
 
     let mut wide = [0i16; I2S_FRAME_SAMPLES];
@@ -208,8 +200,8 @@ async fn mic_task(mut i2s: PioI2sIn<'static, PIO1, 0>) -> ! {
         // landed while the DMA is busy.
         let transfer = i2s.read(front);
 
-        for (sample, word) in wide.iter_mut().zip(back.iter()) {
-            *sample = sample_from_i2s(*word);
+        for (sample, frame) in wide.iter_mut().zip(back.chunks_exact(WORDS_PER_FRAME)) {
+            *sample = sample_from_frame(frame);
         }
         decimator.process(&wide, &mut frame);
 
@@ -235,11 +227,13 @@ async fn mic_task(mut i2s: PioI2sIn<'static, PIO1, 0>) -> ! {
 /// clock has to keep running through it regardless.
 #[embassy_executor::task]
 async fn speaker_task(mut i2s: PioI2sOut<'static, PIO1, 1>) -> ! {
-    static DMA: StaticCell<[u32; I2S_FRAME_SAMPLES * 2]> = StaticCell::new();
+    const WORDS: usize = I2S_FRAME_SAMPLES * WORDS_PER_FRAME;
+
+    static DMA: StaticCell<[u32; WORDS * 2]> = StaticCell::new();
     static INTERPOLATOR: StaticCell<Interpolator> = StaticCell::new();
 
-    let dma = DMA.init([0; I2S_FRAME_SAMPLES * 2]);
-    let (mut back, mut front) = dma.split_at_mut(I2S_FRAME_SAMPLES);
+    let dma = DMA.init([0; WORDS * 2]);
+    let (mut back, mut front) = dma.split_at_mut(WORDS);
     let interpolator = INTERPOLATOR.init(Interpolator::new());
 
     let mut wide = [0i16; I2S_FRAME_SAMPLES];
@@ -269,8 +263,8 @@ async fn speaker_task(mut i2s: PioI2sOut<'static, PIO1, 1>) -> ! {
 
         if have_audio {
             interpolator.process(&frame, &mut wide);
-            for (word, sample) in back.iter_mut().zip(wide.iter()) {
-                *word = pack_stereo(*sample);
+            for (out_frame, sample) in back.chunks_exact_mut(WORDS_PER_FRAME).zip(wide.iter()) {
+                fill_stereo(out_frame, *sample);
             }
         } else {
             back.fill(0);

@@ -4,6 +4,9 @@
 //! wire; releasing it plays the room. The two are never live together — see
 //! [`intercom::ptt_held`] for why.
 //!
+//! A board with no button fitted sets [`PTT_WIRED`] false and runs full duplex
+//! instead, which needs the microphone kept out of earshot of the speaker.
+//!
 //! # Tasks
 //!
 //! Everything runs on core 0. An earlier revision of this repo put audio
@@ -11,14 +14,15 @@
 //! receive path; on one executor the I2S DMA completions and the network poll
 //! interleave without that cost, and there is compute to spare either way.
 //!
-//! * `mic_task` — I2S in at 48 kHz, decimated to 320-sample frames. Frames are
-//!   only queued while PTT is held.
+//! * `mic_task` — I2S in at 48 kHz, DC blocked, gained, and decimated to
+//!   320-sample frames. Frames are only queued while the microphone is live.
 //! * `speaker_task` — I2S out at 48 kHz, interpolated from the jitter buffer.
 //!   Free-running: it emits a block every 20 ms whether or not audio arrived.
 //! * `net_task` — one UDP socket for both directions, plus the keepalive that
 //!   registers this device as a listener while it has nothing to send.
 //! * `ptt_task` — debounced button.
-//! * `led_task` — onboard LED mirrors PTT, so you can see when you are live.
+//! * `led_task` — onboard LED mirrors the microphone, so you can see when you
+//!   are live.
 //!
 //! # Wiring
 //!
@@ -47,7 +51,7 @@ use core::mem;
 
 use defmt::*;
 use embassy_executor::Spawner;
-use embassy_futures::select::{select, select3, Either, Either3};
+use embassy_futures::select::{select3, Either3};
 use embassy_net::udp::{PacketMetadata, UdpSocket};
 use embassy_net::{IpAddress, IpEndpoint, Stack};
 use embassy_rp::gpio::{Input, Pull};
@@ -106,11 +110,6 @@ fn mic_live() -> bool {
 fn playback_muted() -> bool {
     PTT_WIRED && intercom::ptt_held()
 }
-
-/// How much of [`net_task`] to run. A bisect knob for the hang that stops every
-/// task a few hundred ms after the network task starts; see the ladder there.
-/// 0 = bound socket only, 1 = plus send, 2 = plus receive, 3 = the real task.
-const NET_TASK_STAGE: u8 = 3;
 
 /// Capture gain, in bits. 5 is 32x, which puts conversational speech near
 /// -20 dBFS instead of -50. Raise it if voices are still thin; if `pp` in the
@@ -431,59 +430,9 @@ async fn net_task(stack: Stack<'static>, server: core::net::Ipv4Addr) -> ! {
 
     let room = IpEndpoint::new(IpAddress::Ipv4(server), UDP_PORT);
     info!(
-        "intercom: sending to {}:{}, nothing heard back yet (net stage {})",
-        server, UDP_PORT, NET_TASK_STAGE
+        "intercom: sending to {}:{}, nothing heard back yet",
+        server, UDP_PORT
     );
-
-    // Bisect ladder for the executor hang. Every task stops within a few
-    // hundred ms of this point, with no fault for probe-rs to catch, so the
-    // question is which part of the work below triggers it. Each stage adds one
-    // thing and then loops forever, printing a heartbeat: whichever stage stops
-    // printing is the one that does it. Set the stage, flash, watch for two or
-    // three heartbeats past where it used to die.
-    if NET_TASK_STAGE == 0 {
-        // Socket exists and is bound, but no traffic at all. If even this hangs,
-        // `net_task` is not the trigger and the timing has been a coincidence.
-        let mut beats: u32 = 0;
-        loop {
-            Timer::after(KEEPALIVE_INTERVAL).await;
-            beats = beats.wrapping_add(1);
-            info!("intercom: stage 0 alive, {} beats", beats);
-        }
-    }
-
-    if NET_TASK_STAGE == 1 {
-        // Transmit only.
-        let mut beats: u32 = 0;
-        loop {
-            Timer::after(KEEPALIVE_INTERVAL).await;
-            beats = beats.wrapping_add(1);
-            match socket.send_to(&[], room).await {
-                Ok(()) => info!("intercom: stage 1 sent keepalive {}", beats),
-                Err(e) => warn!("intercom: stage 1 send failed: {:?}", e),
-            }
-        }
-    }
-
-    if NET_TASK_STAGE == 2 {
-        // Transmit plus receive, but still no channel from the mic.
-        let mut beats: u32 = 0;
-        let mut packet = [0u8; 1500];
-        let mut keepalive = Ticker::every(KEEPALIVE_INTERVAL);
-        loop {
-            match select(socket.recv_from(&mut packet), keepalive.next()).await {
-                Either::First(Ok((n, from))) => info!("intercom: stage 2 rx {} from {}", n, from),
-                Either::First(Err(e)) => warn!("intercom: stage 2 recv failed: {:?}", e),
-                Either::Second(()) => {
-                    beats = beats.wrapping_add(1);
-                    match socket.send_to(&[], room).await {
-                        Ok(()) => info!("intercom: stage 2 sent keepalive {}", beats),
-                        Err(e) => warn!("intercom: stage 2 send failed: {:?}", e),
-                    }
-                }
-            }
-        }
-    }
 
     let mut keepalive = Ticker::every(KEEPALIVE_INTERVAL);
     let mut packet = [0u8; 1500];
@@ -503,7 +452,7 @@ async fn net_task(stack: Stack<'static>, server: core::net::Ipv4Addr) -> ! {
         )
         .await
         {
-            // Mic frame, already gated on PTT by the capture task.
+            // Mic frame, already gated by the capture task.
             Either3::First(frame) => {
                 let bytes: &[u8] = bytemuck::cast_slice(&frame);
                 match socket.send_to(bytes, room).await {

@@ -59,7 +59,7 @@ impl EmbassyPicoWifiCore {
         // cyw43 0.7 no longer bundles the RP2040 NVRAM blob; it has to be passed to `new`.
         let nvram: &Aligned<A4, [u8]> = aligned_bytes!("../../cyw43-firmware/nvram_rp2040.bin");
 
-        pub const FLASH_NEW_FIRMWARE: bool = true;
+        pub const FLASH_NEW_FIRMWARE: bool = false;
 
         match FLASH_NEW_FIRMWARE {
             true => {
@@ -83,11 +83,19 @@ impl EmbassyPicoWifiCore {
         let pwr = Output::new(pin_23, Level::Low);
         let cs = Output::new(pin_25, Level::High);
         let config = Config::dhcpv4(Default::default());
+        // Half the stock SPI clock. `DEFAULT_CLOCK_DIVIDER` is 2.0, putting the
+        // PIO at 62.5 MHz on a 125 MHz RP2040, which is more than breadboard
+        // wiring to the CYW43 reliably carries. Corrupt reads there are not a
+        // cosmetic problem: SDPCM transmit credits arrive inside received
+        // packets, so a mangled read loses the credit update, and the runner
+        // then reports `TX stalled` and stops sending until the next good one.
+        // That shows up as choppy, distorted audio with frames being dropped
+        // for a link that is nowhere near its bandwidth.
         let mut pio = Pio::new(pio_0, crate::common::irqs::Irqs);
         let spi = PioSpi::new(
             &mut pio.common,
             pio.sm0,
-            DEFAULT_CLOCK_DIVIDER,
+            DEFAULT_CLOCK_DIVIDER * 2,
             pio.irq0,
             cs,
             pin_24,

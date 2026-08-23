@@ -47,7 +47,7 @@ use core::mem;
 
 use defmt::*;
 use embassy_executor::Spawner;
-use embassy_futures::select::{select3, Either3};
+use embassy_futures::select::{select, select3, Either, Either3};
 use embassy_net::udp::{PacketMetadata, UdpSocket};
 use embassy_net::{IpAddress, IpEndpoint, Stack};
 use embassy_rp::gpio::{Input, Pull};
@@ -83,9 +83,55 @@ const I2S_BIT_DEPTH: u32 = 32;
 /// start of a word.
 const PTT_DEBOUNCE: Duration = Duration::from_millis(15);
 
-/// Depth 2: the network task drains this on the same executor, so it only has
-/// to cover one block of scheduling jitter.
-static MIC: Channel<CriticalSectionRawMutex, Frame, 2> = Channel::new();
+/// Whether a button is actually fitted to GPIO 22.
+///
+/// With no button the pin's pull-up reads high forever, which the PTT logic
+/// reads as "not talking" — so the microphone never transmits at all and the
+/// device is silently listen-only. Setting this false takes the button out of
+/// the picture: the microphone is always live and the room is always played.
+///
+/// That is full duplex, which the half-duplex design exists to avoid. There is
+/// no echo canceller here, so if the microphone can hear the speaker they will
+/// feed back and everyone else will hear themselves. Fine on a bare board or
+/// with headphones; fit the button before putting both in one enclosure.
+const PTT_WIRED: bool = false;
+
+/// Is the microphone on the wire? Always, unless a button says otherwise.
+fn mic_live() -> bool {
+    !PTT_WIRED || intercom::ptt_held()
+}
+
+/// Should incoming room audio be discarded rather than played? Only ever while
+/// a real button is held — the half-duplex gate needs something to gate on.
+fn playback_muted() -> bool {
+    PTT_WIRED && intercom::ptt_held()
+}
+
+/// How much of [`net_task`] to run. A bisect knob for the hang that stops every
+/// task a few hundred ms after the network task starts; see the ladder there.
+/// 0 = bound socket only, 1 = plus send, 2 = plus receive, 3 = the real task.
+const NET_TASK_STAGE: u8 = 3;
+
+/// Capture gain, in bits. 5 is 32x, which puts conversational speech near
+/// -20 dBFS instead of -50. Raise it if voices are still thin; if `pp` in the
+/// diagnostic starts pinning at 65535 it is too high and is clipping.
+const MIC_GAIN_SHIFT: u32 = 5;
+/// Time constant of the DC blocker, in bits. 11 is ~43 ms at 48 kHz: slow
+/// enough to leave the lowest voice frequencies alone, fast enough to settle
+/// well before anyone finishes pressing the button.
+const MIC_DC_SHIFT: u32 = 11;
+
+/// Depth 8 — 160 ms of frames.
+///
+/// This was 2, on the reasoning that the network task drains it on the same
+/// executor and so only has to cover one block of scheduling jitter. That
+/// underestimates the drain: it ends in `send_to`, which awaits a transfer over
+/// the cyw43 SPI link, and that regularly takes longer than the 20 ms between
+/// frames. Two slots meant any send over 40 ms threw a frame away, which is
+/// what "choppy" sounds like. The extra depth is only touched when the radio
+/// falls behind; when it keeps up the queue still runs one deep and adds no
+/// latency.
+static MIC: Channel<CriticalSectionRawMutex, Frame, 8> = Channel::new();
 
 static ENV: StaticCell<EnvironmentVariables> = StaticCell::new();
 static WIFI: StaticCell<EmbassyPicoWifiCore> = StaticCell::new();
@@ -142,9 +188,13 @@ async fn main(spawner: Spawner) {
 
     // Sample the button before anything can transmit, so a device that powers up
     // with PTT held does not start out in the wrong state.
-    let ptt = Input::new(p.PIN_22, Pull::Up);
-    intercom::set_ptt(ptt.is_low());
-    spawner.spawn(unwrap!(ptt_task(ptt)));
+    if PTT_WIRED {
+        let ptt = Input::new(p.PIN_22, Pull::Up);
+        intercom::set_ptt(ptt.is_low());
+        spawner.spawn(unwrap!(ptt_task(ptt)));
+    } else {
+        info!("intercom: no PTT button fitted, microphone always live (full duplex, no echo canceller)");
+    }
 
     spawner.spawn(unwrap!(mic_task(i2s_in)));
     spawner.spawn(unwrap!(speaker_task(i2s_out)));
@@ -159,6 +209,17 @@ async fn main(spawner: Spawner) {
 
     spawner.spawn(unwrap!(led_task(wifi)));
     spawner.spawn(unwrap!(net_task(stack, server)));
+
+    // `main` must not return. It still owns `common` and the two loaded PIO
+    // programs, and `Common`'s drop runs `on_pio_drop`, which hands every pin
+    // the block was using back to NULL funcsel once the last handle goes. The
+    // state machines would keep running with their clocks and data lines
+    // disconnected: DMA that never completes, tasks parked forever, and no
+    // fault anywhere for a debugger to catch. Holding the handles here for the
+    // life of the program is what keeps the I2S pins wired to PIO1.
+    loop {
+        Timer::after(Duration::from_secs(3600)).await;
+    }
 }
 
 /// Write one mono sample into a stereo frame's pair of 32-bit slots. The PIO
@@ -192,6 +253,7 @@ async fn mic_task(mut i2s: Sph0645I2sIn<'static, PIO1, 0>) -> ! {
     let mut frame: Frame = [0; FRAME_SAMPLES];
     let mut dropped: u32 = 0;
     let mut blocks: u32 = 0;
+    let mut dc_acc: i32 = 0;
 
     i2s.start();
     info!("intercom: microphone running at {} Hz", I2S_SAMPLE_RATE);
@@ -202,31 +264,72 @@ async fn mic_task(mut i2s: Sph0645I2sIn<'static, PIO1, 0>) -> ! {
         let transfer = i2s.read(front);
         blocks = blocks.wrapping_add(1);
 
+        // Block DC, then lift the level. Both are needed and the order matters.
+        //
+        // The SPH0645 reaches full scale at 120 dB SPL, so speech at arm's
+        // length (~70 dB SPL) sits 50 dB down — about ±100 once the 24-bit
+        // sample is scaled to 16 bits. Sent as-is it is technically present and
+        // audibly nothing. The same part also carries a DC offset near -1800 at
+        // this scale, seventeen times larger than the speech riding on it, and
+        // the decimator's FIR has unity DC gain so it would go straight out onto
+        // the wire. Applying gain first would just saturate on the offset.
         for (sample, frame) in wide.iter_mut().zip(back.chunks_exact(WORDS_PER_FRAME)) {
-            *sample = sample_from_frame(frame);
+            let raw = sample_from_frame(frame) as i32;
+            // One-pole running mean, time constant 2^MIC_DC_SHIFT samples —
+            // about 21 ms at 48 kHz, well below any voice frequency.
+            dc_acc += raw - (dc_acc >> MIC_DC_SHIFT);
+            let ac = raw - (dc_acc >> MIC_DC_SHIFT);
+            *sample = (ac << MIC_GAIN_SHIFT).clamp(i16::MIN as i32, i16::MAX as i32) as i16;
         }
         decimator.process(&wide, &mut frame);
 
         // Wiring diagnostic every 2 s, carried over from the duplex-audio
         // branch, where the microphone was never confirmed working:
-        //   maxL=0 maxR=0            data line dead — check 3V3, GND, DOUT→GPIO20
-        //   maxL=0 maxR!=0           mic is on the right channel; tie SELECT to GND
-        //   maxL=8000xxxx, unmoving  stuck MSB — BCLK out of the mic's range
-        //   maxL varies with sound   healthy
+        //   L=00000000, dc=0 pp=0    data line dead — check 3V3, GND, DOUT→GPIO20
+        //   L=00000000, R non-zero   mic is on the right channel; tie SELECT to GND
+        //   L=8000xxxx, pp=0         stuck MSB — BCLK out of the mic's range
+        //   pp rises when you talk   healthy
+        //
+        // `pp` is peak-to-peak of the decoded samples, which is the only one of
+        // these numbers that answers "is it hearing anything". Measuring the raw
+        // words instead does not: they are two's complement in the top 16 bits,
+        // so an unsigned max ranks every negative sample above every positive
+        // one and reports the DC offset. This part has a large one — a quiet
+        // room sits near -1800 — so that reading drifts a little block to block
+        // and looks convincingly like a live signal while telling you nothing.
         if blocks.is_multiple_of(100) {
-            let mut max_left = 0u32;
-            let mut max_right = 0u32;
+            let mut sum: i32 = 0;
+            let mut low = i16::MAX;
+            let mut high = i16::MIN;
+            let mut right_bits = 0u32;
             for pair in back.chunks_exact(WORDS_PER_FRAME) {
-                max_left = max_left.max(pair[0]);
-                max_right = max_right.max(pair[1]);
+                let sample = sample_from_frame(pair);
+                sum += sample as i32;
+                low = low.min(sample);
+                high = high.max(sample);
+                right_bits |= pair[1];
+            }
+            // `out` is the same measurement after DC blocking and gain, which is
+            // what actually reaches the wire. Raw `pp` says the microphone hears
+            // something; `out` says whether anyone on the other end will.
+            let mut out_low = i16::MAX;
+            let mut out_high = i16::MIN;
+            for sample in wide.iter() {
+                out_low = out_low.min(*sample);
+                out_high = out_high.max(*sample);
             }
             info!(
-                "intercom: i2s raw L[0]={:08x} R[0]={:08x} maxL={:08x} maxR={:08x}",
-                back[0], back[1], max_left, max_right
+                "intercom: i2s raw L[0]={:08x} R[0]={:08x} | dc={} pp={} out={} right={}",
+                back[0],
+                back[1],
+                sum / I2S_FRAME_SAMPLES as i32,
+                high as i32 - low as i32,
+                out_high as i32 - out_low as i32,
+                if right_bits == 0 { "silent" } else { "active" }
             );
         }
 
-        if intercom::ptt_held() && MIC.try_send(frame).is_err() {
+        if mic_live() && MIC.try_send(frame).is_err() {
             dropped = dropped.wrapping_add(1);
             if dropped.is_multiple_of(50) {
                 warn!(
@@ -267,7 +370,7 @@ async fn speaker_task(mut i2s: PioI2sOut<'static, PIO1, 1>) -> ! {
     loop {
         let transfer = i2s.write(front);
 
-        let muted = intercom::ptt_held();
+        let muted = playback_muted();
         let have_audio = if muted {
             // Half-duplex gate. Discard anything banked so releasing the button
             // does not replay audio from while we were talking, and clear the
@@ -301,12 +404,20 @@ async fn speaker_task(mut i2s: PioI2sOut<'static, PIO1, 1>) -> ! {
 /// The mix comes back to the address a datagram was sent from, so the local
 /// port is ephemeral and there is nothing to subscribe to — the first packet
 /// out is the join.
+///
+/// Which means joining is not something this end can confirm. UDP has no
+/// connection to fail, so `send_to` succeeds whether or not anything is
+/// listening, and the logs below are careful to claim only what has actually
+/// been observed: datagrams sent, and datagrams received.
 #[embassy_executor::task]
 async fn net_task(stack: Stack<'static>, server: core::net::Ipv4Addr) -> ! {
-    let mut rx_meta = [PacketMetadata::EMPTY; 8];
-    let mut rx_buffer = [0u8; 2048];
-    let mut tx_meta = [PacketMetadata::EMPTY; 8];
-    let mut tx_buffer = [0u8; 2048];
+    // 640 bytes per frame, so 2048 held only three of them on the way out and
+    // `send_to` blocked as soon as the radio fell a frame or two behind —
+    // stalling the drain of MIC and dropping capture. Six frames each way.
+    let mut rx_meta = [PacketMetadata::EMPTY; 16];
+    let mut rx_buffer = [0u8; 4096];
+    let mut tx_meta = [PacketMetadata::EMPTY; 16];
+    let mut tx_buffer = [0u8; 4096];
 
     let mut socket = UdpSocket::new(
         stack,
@@ -319,7 +430,60 @@ async fn net_task(stack: Stack<'static>, server: core::net::Ipv4Addr) -> ! {
     socket.bind(0).expect("intercom: UDP bind failed");
 
     let room = IpEndpoint::new(IpAddress::Ipv4(server), UDP_PORT);
-    info!("intercom: joined room at {}:{}", server, UDP_PORT);
+    info!(
+        "intercom: sending to {}:{}, nothing heard back yet (net stage {})",
+        server, UDP_PORT, NET_TASK_STAGE
+    );
+
+    // Bisect ladder for the executor hang. Every task stops within a few
+    // hundred ms of this point, with no fault for probe-rs to catch, so the
+    // question is which part of the work below triggers it. Each stage adds one
+    // thing and then loops forever, printing a heartbeat: whichever stage stops
+    // printing is the one that does it. Set the stage, flash, watch for two or
+    // three heartbeats past where it used to die.
+    if NET_TASK_STAGE == 0 {
+        // Socket exists and is bound, but no traffic at all. If even this hangs,
+        // `net_task` is not the trigger and the timing has been a coincidence.
+        let mut beats: u32 = 0;
+        loop {
+            Timer::after(KEEPALIVE_INTERVAL).await;
+            beats = beats.wrapping_add(1);
+            info!("intercom: stage 0 alive, {} beats", beats);
+        }
+    }
+
+    if NET_TASK_STAGE == 1 {
+        // Transmit only.
+        let mut beats: u32 = 0;
+        loop {
+            Timer::after(KEEPALIVE_INTERVAL).await;
+            beats = beats.wrapping_add(1);
+            match socket.send_to(&[], room).await {
+                Ok(()) => info!("intercom: stage 1 sent keepalive {}", beats),
+                Err(e) => warn!("intercom: stage 1 send failed: {:?}", e),
+            }
+        }
+    }
+
+    if NET_TASK_STAGE == 2 {
+        // Transmit plus receive, but still no channel from the mic.
+        let mut beats: u32 = 0;
+        let mut packet = [0u8; 1500];
+        let mut keepalive = Ticker::every(KEEPALIVE_INTERVAL);
+        loop {
+            match select(socket.recv_from(&mut packet), keepalive.next()).await {
+                Either::First(Ok((n, from))) => info!("intercom: stage 2 rx {} from {}", n, from),
+                Either::First(Err(e)) => warn!("intercom: stage 2 recv failed: {:?}", e),
+                Either::Second(()) => {
+                    beats = beats.wrapping_add(1);
+                    match socket.send_to(&[], room).await {
+                        Ok(()) => info!("intercom: stage 2 sent keepalive {}", beats),
+                        Err(e) => warn!("intercom: stage 2 send failed: {:?}", e),
+                    }
+                }
+            }
+        }
+    }
 
     let mut keepalive = Ticker::every(KEEPALIVE_INTERVAL);
     let mut packet = [0u8; 1500];
@@ -327,6 +491,8 @@ async fn net_task(stack: Stack<'static>, server: core::net::Ipv4Addr) -> ! {
     let mut sent: u32 = 0;
     let mut received: u32 = 0;
     let mut errors: u32 = 0;
+    let mut answered = false;
+    let opened = Instant::now();
     let mut stats = Instant::now();
 
     loop {
@@ -353,7 +519,14 @@ async fn net_task(stack: Stack<'static>, server: core::net::Ipv4Addr) -> ! {
             // socket buffer cannot back up — but only played when we are not.
             Either3::Second(Ok((n, _))) => {
                 received = received.wrapping_add(1);
-                if !intercom::ptt_held() {
+                // The first datagram back is the only evidence this end ever
+                // gets that the room exists. There is no handshake to wait on,
+                // so this is the line that means what "joined" used to claim.
+                if !answered {
+                    answered = true;
+                    info!("intercom: room at {}:{} answered", server, UDP_PORT);
+                }
+                if !playback_muted() {
                     PLAYBACK.lock(|p| p.borrow_mut().push(&packet[..n]));
                 }
             }
@@ -366,7 +539,7 @@ async fn net_task(stack: Stack<'static>, server: core::net::Ipv4Addr) -> ! {
             // contributing audio. Only needed when we are not already sending:
             // any datagram refreshes the server's timeout.
             Either3::Third(()) => {
-                if !intercom::ptt_held() && socket.send_to(&[], room).await.is_err() {
+                if !mic_live() && socket.send_to(&[], room).await.is_err() {
                     errors = errors.wrapping_add(1);
                 }
             }
@@ -379,6 +552,18 @@ async fn net_task(stack: Stack<'static>, server: core::net::Ipv4Addr) -> ! {
                 "intercom: tx {} rx {} err {} | jitter buffer: {} over, {} under",
                 sent, received, errors, overruns, underruns
             );
+            // A quiet room and a dead server look identical from here — the
+            // server never transmits silence, so receiving nothing is the
+            // expected state when no one is talking. Say what is true and let
+            // the reader draw the conclusion, rather than picking one.
+            if !answered {
+                warn!(
+                    "intercom: nothing received from {}:{} in {} s — either the room is silent or nothing is listening on that port",
+                    server,
+                    UDP_PORT,
+                    opened.elapsed().as_secs()
+                );
+            }
             stats = Instant::now();
         }
     }
@@ -409,7 +594,7 @@ async fn led_task(wifi: &'static mut EmbassyPicoWifiCore) -> ! {
     let mut shown = false;
     wifi.control.gpio_set(0, shown).await;
     loop {
-        let held = intercom::ptt_held();
+        let held = mic_live();
         if held != shown {
             wifi.control.gpio_set(0, held).await;
             shown = held;

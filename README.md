@@ -58,6 +58,43 @@ To bring the hardware up without running SPQR, point `AUDIO_SERVER_IP` at your
 desktop and run [`py-client/audio_room.py`](py-client/README.md), which stands in
 for the room over the same protocol.
 
+**The server has to publish UDP 1234.** Browsers reach the room over a WebSocket
+on the HTTP port, so a deployment can look perfectly healthy — the app loads,
+participants join — while the pico's datagrams hit a closed port. If SPQR runs in
+Docker, the mapping needs the `/udp` suffix; without it Docker publishes TCP and
+the room stays unreachable to any device:
+
+```yaml
+ports:
+  - "5150:5150"
+  - "1234:1234/udp"
+```
+
+The pico cannot tell the difference. UDP has no connection to fail, so `send_to`
+succeeds and nothing is wrong from its point of view; the firmware only ever says
+`sending to <ip>:1234, nothing heard back yet`, and upgrades that to
+`room at <ip>:1234 answered` once a datagram actually arrives. Until you see the
+second line, nothing has been confirmed in either direction.
+
+Because the server does not transmit silence, an idle room and an unreachable one
+produce identical symptoms here, so the firmware will not guess between them —
+it warns every 5 s that it has heard nothing and leaves the conclusion to you.
+Diagnose it from the desktop instead, where a *connected* UDP socket turns the
+ICMP port-unreachable into a visible error:
+
+```sh
+python3 -c "import socket;s=socket.socket(socket.AF_INET,socket.SOCK_DGRAM);s.connect(('<server>',1234));s.send(b'');s.settimeout(1);s.recv(4096)"
+```
+
+`ConnectionRefusedError` means nothing is listening; a timeout means the room is
+there and simply has no audio to send back. The server side is just as clear: it
+logs `audio: participant N joined over udp from ...` on the first datagram, so a
+log showing only `over websocket` is a log in which no device has ever arrived.
+
+Note that the firmware's own `tx/rx/err` stats line is on a 5 s timer that resets
+when the socket comes up, so the first one lands about 10 s after boot. Give it
+longer than that before concluding nothing is happening.
+
 **Half duplex.** Hold the button to talk, release to listen. The two are never
 live at once: while the button is down, incoming room audio is discarded rather
 than played. There is no acoustic echo canceller — an M0+ is not going to run one —

@@ -36,16 +36,25 @@ embassy-net = { version = "0.9.1", features = [
     "medium-ethernet",
     "dns",
 ] }
+# No `bluetooth`: nothing here drives a BT device (wifi.rs uses `cyw43::new`,
+# not `new_with_bluetooth`), and the feature swaps the runner's interrupt wait
+# for a busy-poll of the SPI bus — pure contention against the I2S tasks.
 cyw43 = { version = "0.7.0", features = [
     "defmt",
     "firmware-logs",
-    "bluetooth",
 ] }
 cyw43-pio = { version = "0.10.0", features = ["defmt"] }
 
 
 defmt = "1.0.1"
-defmt-rtt = "1.0.0"
+# `disable-blocking-mode` because this device has real-time deadlines and the
+# debug probe does not. With a probe attached defmt-rtt defaults to blocking:
+# a log line spins inside a critical section until the host drains the buffer,
+# so any interruption of the SWD link — and the CYW43 transmitting a foot from
+# the probe wires is enough — wedges the whole executor with interrupts off. It
+# looks exactly like a hang, with no fault for probe-rs to catch. Losing log
+# lines when the host falls behind is the better failure.
+defmt-rtt = { version = "1.0.0", features = ["disable-blocking-mode"] }
 
 # for web request example
 reqwless = { version = "0.14.0", features = ["defmt"] }

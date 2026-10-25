@@ -82,6 +82,8 @@ embassy-usb-logger = "0.6.0"
 embassy-usb = { version = "0.6.0", features = ["defmt"] }
 log = "0.4.27"
 embassy-usb-driver = "0.2.2"
+embedded-rtp = "0.1.1"
+embassy-futures = "0.1.2"
 
 # The chip-select features have to match the `[build] target` in
 # .cargo/config.toml — enabling `rp235xa` while compiling for thumbv6m gets you
@@ -179,12 +181,11 @@ bench = false
 
 
 [[bin]]
-name = "audio_udp"
-path = "src/bin/audio_udp.rs"
+name = "audio_rtp"
+path = "src/bin/audio_rtp.rs"
 test = false
 doctest = false
 bench = false
-
 
 [lib]
 name = "pinot_voir"

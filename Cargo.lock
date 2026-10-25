@@ -1069,6 +1069,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "embedded-rtp"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a2cdea01282a1daa766792f5d1e043b3fafe3b32a003c88f96131c5e9518314b"
+
+[[package]]
 name = "embedded-storage"
 version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1852,6 +1858,7 @@ dependencies = [
  "embassy-dht",
  "embassy-embedded-hal",
  "embassy-executor",
+ "embassy-futures",
  "embassy-net",
  "embassy-rp",
  "embassy-sync",
@@ -1862,6 +1869,7 @@ dependencies = [
  "embedded-graphics",
  "embedded-hal 1.0.0",
  "embedded-io-async 0.7.0",
+ "embedded-rtp",
  "heapless 0.9.3",
  "log",
  "panic-probe",
